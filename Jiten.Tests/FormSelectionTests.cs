@@ -255,6 +255,9 @@ public class FormSelectionTests
 
         // ガチ (katakana) → colloquial ガチ/serious (2653620)
         yield return ["ガチの無人島サバイバル", "ガチ", 2653620, (byte)1];
+        yield return ["ガチ返しをしてきた", "ガチ", 2653620, (byte)1];
+        yield return ["ガチ目の前でやられてる", "ガチ", 2653620, (byte)1];
+        yield return ["ガチ惚れしそうで怖い", "ガチ", 2653620, (byte)1];
 
         // がちがち → onomatopoeia "stiff/rigid" (1003110), not split into がち+が+ちち
         yield return ["がちがちに緊張する", "がちがち", 1003110, (byte)1];

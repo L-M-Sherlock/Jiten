@@ -117,11 +117,7 @@ public class MorphologicalAnalyser
     
     private readonly HashSet<char> _sentenceEnders = ['。', '！', '？', '」'];
 
-    private static readonly HashSet<string> MisparsesRemove =
-    [
-        "そ", "る", "ま", "ふ", "ち", "ほ", "す", "じ", "なさ", "い", "ぴ", "ふあ", "ぷ", "ちゅ", "にっ", "じら", "タ", "け", "イ", "イッ", "ほっ", "そっ",
-        "ウー", "うー", "ううう", "うう", "ウウウウ", "ウウ", "ううっ", "かー", "ぐわー", "違", "タ"
-    ];
+
 
     // Token to separate some words in sudachi
     private static readonly string _stopToken = "|";
@@ -347,7 +343,7 @@ public class MorphologicalAnalyser
                 i + 1 < wordInfos.Count &&
                 wordInfos[i + 1] is { PartOfSpeech: PartOfSpeech.Particle, Text: "から" or "を" or "が" or "に" or "で" or "へ" or "の" or "は" or "も" })
                 word.PartOfSpeech = PartOfSpeech.Noun;
-            
+
             if (word is { Text: "山", PartOfSpeech: PartOfSpeech.Suffix })
                 word.PartOfSpeech = PartOfSpeech.Noun;
 
@@ -367,25 +363,6 @@ public class MorphologicalAnalyser
             {
                 word.DictionaryForm = "です";
                 word.PartOfSpeech = PartOfSpeech.Auxiliary;
-            }
-
-            // Don't filter if next token is ー (will be handled by RepairLongVowelTokens in Parser)
-            bool nextIsLongVowel = i + 1 < wordInfos.Count && wordInfos[i + 1].Text == "ー";
-
-            // For MisparsesRemove: don't filter single-kana tokens followed by ー (e.g., る + ー could be verb ending),
-            // and don't filter tokens ending in ー — RepairLongVowelMisparses in Parser handles them dictionary-driven
-            bool shouldFilterMisparse = MisparsesRemove.Contains(word.Text) &&
-                                        !(nextIsLongVowel && word.Text.Length == 1 && WanaKana.IsKana(word.Text)) &&
-                                        !word.Text.EndsWith("ー");
-
-            if (shouldFilterMisparse ||
-                word.PartOfSpeech == PartOfSpeech.Noun && !nextIsLongVowel && (
-                    (word.Text.Length == 1 && WanaKana.IsKana(word.Text)) ||
-                    word.Text is "エナ" or "えな"
-                ))
-            {
-                wordInfos.RemoveAt(i);
-                continue;
             }
         }
 
@@ -1370,13 +1347,18 @@ public class MorphologicalAnalyser
         // Fix Sudachi parsing 事大 as じだい (subserviency) — should be 事 + 大X (大好き, 大声, 大人, etc.)
         text = Regex.Replace(text, "事大", $"事{_stopToken}大");
 
-        // Split N日間 → N日 + 間 so Sudachi parses 三日 (three days) + 間 (period)
-        // instead of 三 + 日間 (archaic "daytime")
-        text = Regex.Replace(text, @"(?<=[一二三四五六七八九十百千万何数幾０-９])日間", $"日{_stopToken}間");
+        // Always split 日間 → 日 + 間 — 日間 as "daytime" (にっかん) is archaic;
+        // in modern text it's virtually always N日間 (counter + period suffix)
+        text = text.Replace("日間", $"日{_stopToken}間");
 
         // Split 何本 → 何 + 本 so it parses as "how many" + counter
         // Sudachi treats 何本 as surname ナニモト or single noun ナンボン; JMDict only has the surname
         text = Regex.Replace(text, "何本", $"何{_stopToken}本");
+
+        // Normalise emphatic katakana within hiragana words (common literary device)
+        // e.g., ふウむ → ふうむ, まサか → まさか
+        text = Regex.Replace(text, @"(?<=[\u3041-\u3096])[\u30A1-\u30F6](?=[\u3041-\u3096])",
+            m => ((char)(m.Value[0] - 0x60)).ToString());
 
         // Normalise katakana imperative 来イ → 来い (emphatic manga/game dialogue style)
         text = Regex.Replace(text, "来イ", "来い");

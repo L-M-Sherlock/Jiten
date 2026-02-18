@@ -41,6 +41,14 @@ namespace Jiten.Parser
 
         private static readonly Regex SmallTsuLongVowelRegex = new(@"ッー", RegexOptions.Compiled);
 
+        // Surface-text misparse tokens to remove after repair stages (deferred from MorphologicalAnalyser
+        // so RepairLongVowelMisparses can use them for backward-merge reconstruction)
+        private static readonly HashSet<string> MisparsesRemove =
+        [
+            "そ", "る", "ま", "ふ", "ち", "ほ", "す", "じ", "なさ", "い", "ぴ", "ふあ", "ぷ", "ちゅ", "にっ", "じら", "タ", "け", "イ", "イッ", "ほっ", "そっ",
+            "ウー", "うー", "ううう", "うう", "ウウウウ", "ウウ", "ううっ", "かー", "ぐわー", "違", "タ"
+        ];
+
         // Excluded (WordId, ReadingIndex) pairs to filter from final parsing results
         private static readonly HashSet<(int WordId, byte ReadingIndex)> ExcludedMisparses =
         [
@@ -138,6 +146,7 @@ namespace Jiten.Parser
             await CombineCompounds(sentences);
             RepairLongVowelMisparses(sentences);
             RepairLongVowelTokens(sentences);
+            FilterOrphanedMisparses(sentences);
             MarkPersonNameHonorificContexts(sentences);
         }
 
@@ -2134,6 +2143,38 @@ namespace Jiten.Parser
         }
 
         /// <summary>
+        /// Removes orphaned misparse tokens (single-kana fillers, junk tokens) that weren't consumed
+        /// by earlier repair stages. Runs after RepairLongVowelMisparses/RepairLongVowelTokens so those
+        /// stages can use filler tokens for backward-merge reconstruction (e.g. お+ま+えー → おまえ).
+        /// </summary>
+        private static void FilterOrphanedMisparses(List<SentenceInfo> sentences)
+        {
+            foreach (var sentence in sentences)
+            {
+                for (int i = sentence.Words.Count - 1; i >= 0; i--)
+                {
+                    var word = sentence.Words[i].word;
+
+                    bool nextIsLongVowel = i + 1 < sentence.Words.Count &&
+                                           sentence.Words[i + 1].word.Text == "ー";
+
+                    bool shouldFilter = MisparsesRemove.Contains(word.Text) &&
+                                        !(nextIsLongVowel && word.Text.Length == 1 && WanaKana.IsKana(word.Text)) &&
+                                        !word.Text.EndsWith("ー");
+
+                    if (shouldFilter ||
+                        word.PartOfSpeech == PartOfSpeech.Noun && !nextIsLongVowel && (
+                            (word.Text.Length == 1 && WanaKana.IsKana(word.Text)) ||
+                            word.Text is "エナ" or "えな"
+                        ))
+                    {
+                        sentence.Words.RemoveAt(i);
+                    }
+                }
+            }
+        }
+
+        /// <summary>
         /// Combines adjacent noun tokens that form valid JMDict entries.
         /// Uses greedy longest-match: tries 4-token, then 3-token, then 2-token combinations.
         /// </summary>
@@ -2763,15 +2804,15 @@ namespace Jiten.Parser
                     surfaceMatchScore += 60;
             }
 
+            // Scale factor for deep deconjugation chains: after auxiliary merging,
+            // Sudachi's dictionaryForm/normalizedForm reflect the pre-merge token, not the combined surface
+            double lemmaScale = 1.0;
+            if (candidate.DeconjForm?.Process is { Count: > 0 } deconjProcess)
+                lemmaScale = Math.Max(0.0, 1.0 - (deconjProcess.Count - 1) * 0.35);
+
             // Lemma match — only when dictionaryForm differs from surface
-            // Scale down for deep deconjugation chains: after auxiliary merging,
-            // Sudachi's dictionaryForm reflects the pre-merge token, not the combined surface
             if (!string.IsNullOrEmpty(dictionaryForm) && dictionaryForm != surface)
             {
-                double lemmaScale = 1.0;
-                if (candidate.DeconjForm?.Process is { Count: > 0 } deconjProcess)
-                    lemmaScale = Math.Max(0.0, 1.0 - (deconjProcess.Count - 1) * 0.35);
-
                 if (dictionaryForm == form.Text)
                     surfaceMatchScore += (int)(100 * lemmaScale);
                 else
@@ -2785,23 +2826,24 @@ namespace Jiten.Parser
             }
 
             // NormalizedForm bonus — only when it differs from both surface and dictionaryForm
+            // Scale by lemmaScale: for deep chains, Sudachi's normalizedForm is less reliable
             if (!string.IsNullOrEmpty(normalizedForm) && normalizedForm != surface && normalizedForm != dictionaryForm)
             {
                 if (normalizedForm == form.Text)
-                    surfaceMatchScore += 50;
+                    surfaceMatchScore += (int)(50 * lemmaScale);
                 else
                 {
                     var normHira = KanaNormalizer.Normalize(
                                                             WanaKana.ToHiragana(normalizedForm,
                                                                                 new DefaultOptions { ConvertLongVowelMark = false }));
                     if (normHira == formHira)
-                        surfaceMatchScore += 20;
+                        surfaceMatchScore += (int)(20 * lemmaScale);
 
                     // Sudachi's NormalizedForm is kanji but candidate form is kana —
                     // check if the word owns that kanji form to disambiguate homophones
                     // (e.g. ふう: 風 "style" vs 封 "seal" — Sudachi says 風)
                     if (word.Forms.Any(f => f.Text == normalizedForm))
-                        surfaceMatchScore += 30;
+                        surfaceMatchScore += (int)(30 * lemmaScale);
                 }
             }
 
