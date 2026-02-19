@@ -57,7 +57,7 @@ namespace Jiten.Parser
             (1811220, 1), (2654270, 0), (2269410, 1), (2439040, 3), (2861095, 0), (2836250, 0),
             (1595910, 4), (2577750, 0), (1365520, 1), (1310720, 1), (1528180,1), (2866457,1),
             (2394370,4), (1203250,2), (1537250,2), (2783750,1), (2654250,0), (2609820,1),
-            (2080360,3), (1333240,2), (2035220,2), (5616612,5), (2249020,1)
+            (2080360,3), (1333240,2), (2035220,2), (5616612,5), (2249020,1), (2783700,1)
         ];
 
         private static async Task InitDictionaries()
@@ -149,6 +149,16 @@ namespace Jiten.Parser
             FilterOrphanedMisparses(sentences);
             MarkPersonNameHonorificContexts(sentences);
         }
+
+        private static readonly HashSet<string> ArchaicPosTypes =
+        [
+            "v2a-s", "v2b-k", "v2b-s", "v2d-k", "v2d-s", "v2g-k", "v2g-s",
+            "v2h-k", "v2h-s", "v2k-k", "v2k-s", "v2m-k", "v2m-s", "v2n-s",
+            "v2r-k", "v2r-s", "v2s-s", "v2t-k", "v2t-s", "v2w-s", "v2y-k",
+            "v2y-s", "v2z-s",
+            "v4b", "v4g", "v4h", "v4k", "v4m", "v4n", "v4r", "v4s", "v4t",
+            "adj-kari", "adj-ku", "adj-shiku"
+        ];
 
         private static readonly HashSet<string> PersonHonorifics = ["さん", "ちゃん", "くん", "氏", "様"];
 
@@ -794,7 +804,35 @@ namespace Jiten.Parser
                             }
                             else
                             {
-                                processedWord = nounResult.word;
+                                // Also try verb deconjugation: noun-tagged tokens may be verb stems
+                                // (e.g., 抱え is both a rare noun "armful" and 連用形 of the common verb 抱える).
+                                // Prefer the verb if it has strictly higher priority.
+                                var savedPos = wordData.wordInfo.PartOfSpeech;
+                                wordData.wordInfo.PartOfSpeech = PartOfSpeech.Verb;
+                                var verbFallback = await DeconjugateVerbOrAdjective(wordData, deconjugator, diagnostics);
+                                wordData.wordInfo.PartOfSpeech = savedPos;
+
+                                if (verbFallback.success && verbFallback.word != null && nounResult.word != null)
+                                {
+                                    var bothCache = await JmDictCache.GetWordsAsync(
+                                        [nounResult.word.WordId, verbFallback.word.WordId]);
+                                    if (bothCache.TryGetValue(nounResult.word.WordId, out var nounEntry) &&
+                                        bothCache.TryGetValue(verbFallback.word.WordId, out var verbEntry))
+                                    {
+                                        bool isKana = WanaKana.IsKana(wordData.wordInfo.Text);
+                                        processedWord = verbEntry.GetPriorityScore(isKana) > nounEntry.GetPriorityScore(isKana)
+                                            ? verbFallback.word
+                                            : nounResult.word;
+                                    }
+                                    else
+                                    {
+                                        processedWord = nounResult.word;
+                                    }
+                                }
+                                else
+                                {
+                                    processedWord = nounResult.word;
+                                }
                             }
                         }
 
@@ -2705,6 +2743,16 @@ namespace Jiten.Parser
                 if (!hasFrequencyMarker)
                     wordScore -= 200;
             }
+            if (word.PartsOfSpeech.Any(ArchaicPosTypes.Contains))
+                wordScore -= 75;
+
+            // Deconjugation chain length: shorter chains indicate a more direct
+            // morphological match and are more likely correct for homophone disambiguation
+            int chainCount = candidate.DeconjForm?.Process?.Count ?? 0;
+            if (chainCount <= 2)
+                wordScore += 8;
+            else
+                wordScore -= 8 * (chainCount - 2);
 
             // 2) EntryPriorityScore — global word frequency from word-level priorities
             int entryPriorityScore = 0;
@@ -2814,7 +2862,13 @@ namespace Jiten.Parser
             if (!string.IsNullOrEmpty(dictionaryForm) && dictionaryForm != surface)
             {
                 if (dictionaryForm == form.Text)
-                    surfaceMatchScore += (int)(100 * lemmaScale);
+                {
+                    // Exact Sudachi DictionaryForm match: use a minimum floor so that deep
+                    // deconjugation chains (e.g. ぬかるんでた → ぬかるむ via teru contraction)
+                    // don't completely nullify Sudachi's identification
+                    double effectiveScale = Math.Max(0.3, lemmaScale);
+                    surfaceMatchScore += (int)(100 * effectiveScale);
+                }
                 else
                 {
                     var dictHira = KanaNormalizer.Normalize(
@@ -2847,18 +2901,46 @@ namespace Jiten.Parser
                 }
             }
 
+            // Deconjugation-based lemma fallback: when DictionaryForm is unreliable (e.g., Sudachi
+            // misclassified 飛んで as Expression with DictionaryForm=飛んで, then ProcessSpecialCases
+            // derived an approximate DictionaryForm that may not match any form text), the standard
+            // lemma match above gives 0. Use the deconjugated base form as evidence instead.
+            if (candidate.DeconjForm?.Text != null && surfaceMatchScore == 0)
+            {
+                var deconjHira = KanaNormalizer.Normalize(
+                    WanaKana.ToHiragana(candidate.DeconjForm.Text, new DefaultOptions { ConvertLongVowelMark = false }));
+                if (deconjHira == formHira)
+                    surfaceMatchScore += (int)(100 * lemmaScale);
+            }
+
             // Penalise identity matches when Sudachi indicates the surface is a conjugated form.
             // e.g. やろう (surface) with dictionaryForm やる: the expression entry やろう ("seems")
             // should not outscore the deconjugated verb やる ("to do") via the surface match bonus.
+            // Also zero the reading match: the Sudachi reading is the conjugated form's reading,
+            // not evidence for this entry (e.g. 飛んで reading=とんで matching exp entry, not 飛ぶ te-form).
+            bool conjugatedIdentityPenalty = false;
             if (!string.IsNullOrEmpty(dictionaryForm) && dictionaryForm != surface
                 && surface == form.Text
                 && (candidate.DeconjForm == null || candidate.DeconjForm.Process.Count == 0))
             {
                 surfaceMatchScore -= 200;
+                conjugatedIdentityPenalty = true;
             }
 
             // 6) ScriptScore
             int scriptScore = 5 * GetCommonPrefixLen(surface, form.Text);
+
+            // Ichidan stem bonus: when the surface starts with an ichidan verb's stem
+            // (form minus final る), it strongly suggests the surface is a conjugation of
+            // that verb rather than a godan homophone (e.g. ふるえ → 震える not 奮う)
+            if (form.Text.Length > 2
+                && form.Text[^1] == 'る'
+                && word.PartsOfSpeech.Any(p => p is "v1" or "v1-s")
+                && surface.StartsWith(form.Text[..^1]))
+            {
+                int stemLen = form.Text.Length - 1;
+                scriptScore += Math.Min(15, stemLen * 5);
+            }
 
             // 7) ReadingMatchScore — Sudachi reading disambiguation for homographic kanji
             int readingMatchScore = 0;
@@ -2913,6 +2995,9 @@ namespace Jiten.Parser
                         readingMatchScore += 25;
                 }
             }
+
+            if (conjugatedIdentityPenalty)
+                readingMatchScore = 0;
 
             int total = wordScore + entryPriorityScore + formPriorityScore + formFlagScore + surfaceMatchScore + scriptScore +
                         readingMatchScore;
@@ -2973,7 +3058,8 @@ namespace Jiten.Parser
 
             diagnostics.Results.Add(new Diagnostics.WordResult
                                     {
-                                        Text = surface, Reading = sudachiReading, WordId = best.Word.WordId,
+                                        Text = surface, DictionaryForm = dictionaryForm,
+                                        Reading = sudachiReading, WordId = best.Word.WordId,
                                         ReadingIndex = best.ReadingIndex, Candidates = topCandidates
                                     });
 

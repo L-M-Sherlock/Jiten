@@ -113,11 +113,12 @@ public class MorphologicalAnalyser
         ("に", "より", PartOfSpeech.Expression),
         ("とっく", "に", PartOfSpeech.Adverb),
         ("おい", "で", PartOfSpeech.Expression),
+        ("どうして", "も", PartOfSpeech.Adverb),
+        ("か", "も", PartOfSpeech.Particle),
+        ("かも", "しれない", PartOfSpeech.Expression),
     ];
     
     private readonly HashSet<char> _sentenceEnders = ['。', '！', '？', '」'];
-
-
 
     // Token to separate some words in sudachi
     private static readonly string _stopToken = "|";
@@ -309,12 +310,6 @@ public class MorphologicalAnalyser
         return Task.FromResult(results);
     }
 
-    /// <summary>
-    /// Remove common misparses
-    /// </summary>
-    /// <param name="wordInfos"></param>
-    /// <returns></returns>
-    /// <exception cref="NotImplementedException"></exception>
     private List<WordInfo> FilterMisparse(List<WordInfo> wordInfos)
     {
         for (int i = wordInfos.Count - 1; i >= 0; i--)
@@ -330,6 +325,11 @@ public class MorphologicalAnalyser
                 word.PartOfSpeech = PartOfSpeech.Interjection;
 
             if (word is { Text: "つ", PartOfSpeech: PartOfSpeech.Suffix })
+                word.PartOfSpeech = PartOfSpeech.Counter;
+
+            // Sudachi tags counter suffixes (e.g. 頭/とう, 匹, 本) with 助数詞 in POS detail
+            if (word is { PartOfSpeech: PartOfSpeech.Suffix } &&
+                word.HasPartOfSpeechSection(PartOfSpeechSection.Counter))
                 word.PartOfSpeech = PartOfSpeech.Counter;
 
             // 人 after a numeral should be the counter にん, not the suffix じん
@@ -441,10 +441,18 @@ public class MorphologicalAnalyser
                 word.PartOfSpeech = PartOfSpeech.CommonNoun;
             }
 
+            // 何時 (ナンドキ) → ナンジ — ナンドキ is archaic; modern usage is ナンジ (what time) or いつ (when)
+            if (word is { Text: "何時", Reading: "ナンドキ" })
+                word.Reading = "ナンジ";
+
             // 長 as suffix (チョウ) means "chief/head" — JMDict only has this as n (1429740), not suf.
             // Reclassify so the parser matches ちょう instead of なが (2647210, pref/suf "long").
             if (word is { Text: "長", Reading: "チョウ", PartOfSpeech: PartOfSpeech.Suffix })
                 word.PartOfSpeech = PartOfSpeech.Noun;
+
+            // 隙 (ヒマ) → スキ — ヒマ reading is obsolete; modern standalone 隙 is always すき
+            if (word is { Text: "隙", Reading: "ヒマ" })
+                word.Reading = "スキ";
 
             // あの: Sudachi sometimes misclassifies as 感動詞 (filler) when it's prenominal,
             // and as 連体詞 when it's actually a filler interjection.
@@ -1279,9 +1287,9 @@ public class MorphologicalAnalyser
         text = Regex.Replace(text, "“", " \n“ ");
         text = Regex.Replace(text, "”", " ”\n");
         text = Regex.Replace(text, "―", " ― ");
-        text = Regex.Replace(text, "。", " 。\n");
-        text = Regex.Replace(text, "！", " ！\n");
-        text = Regex.Replace(text, "？", " ？\n");
+        text = Regex.Replace(text, "。", "\n。\n");
+        text = Regex.Replace(text, "！", "\n！\n");
+        text = Regex.Replace(text, "？", "\n？\n");
         text = text.Replace("、", "\n");
 
         // Normalise tilde characters to chōon mark when used as vowel elongation after kana
@@ -1395,10 +1403,41 @@ public class MorphologicalAnalyser
 
             if (w1 is { PartOfSpeech: PartOfSpeech.Conjunction or PartOfSpeech.Auxiliary, Text: "で" })
             {
-                w1.PartOfSpeech = PartOfSpeech.Particle;
-                newList.Add(w1);
-                i++;
-                continue;
+                bool nextIsMo = i + 1 < wordInfos.Count && wordInfos[i + 1].Text == "も";
+                if (!nextIsMo)
+                {
+                    w1.PartOfSpeech = PartOfSpeech.Particle;
+                    newList.Add(w1);
+                    i++;
+                    continue;
+                }
+            }
+
+            // Sudachi sometimes classifies verb te-forms ending in んで/んだ as 表現 (Expression)
+            // when a JMDict expression entry exists (e.g., 飛んで → 2248530 "zero; flying").
+            // Reclassify as Verb with the correct DictionaryForm so the parser matches the verb.
+            if (w1.PartOfSpeech == PartOfSpeech.Expression && w1.Text.Length >= 3
+                && (w1.Text.EndsWith("んで") || w1.Text.EndsWith("んだ")))
+            {
+                var hiragana = NormalizeToHiragana(w1.Text);
+                var deconjForms = Deconjugator.Instance.Deconjugate(hiragana);
+                var verbForm = deconjForms.FirstOrDefault(f =>
+                    f.Tags.Any(t => t is "v5b" or "v5m" or "v5n" or "v5g") &&
+                    (f.Text.EndsWith("ぶ") || f.Text.EndsWith("む") || f.Text.EndsWith("ぬ") || f.Text.EndsWith("ぐ")));
+                if (verbForm != null)
+                {
+                    var prefix = w1.Text[..^2];
+                    w1.PartOfSpeech = PartOfSpeech.Verb;
+                    w1.DictionaryForm = prefix + verbForm.Text[^1];
+                }
+            }
+
+            // Sudachi misclassifies standalone ぬ as the archaic verb 寝(ぬ) (文語下二段-ナ行)
+            // instead of the classical negative auxiliary ぬ (助動詞-ヌ, NormalizedForm ず)
+            if (w1 is { Text: "ぬ", PartOfSpeech: PartOfSpeech.Verb, NormalizedForm: "寝る" })
+            {
+                w1.PartOfSpeech = PartOfSpeech.Auxiliary;
+                w1.NormalizedForm = "ず";
             }
 
             if (w1 is { PartOfSpeech: PartOfSpeech.Prefix, Text: "今" })
@@ -1418,6 +1457,20 @@ public class MorphologicalAnalyser
                 w1.Reading = "カラ";
                 w1.NormalizedForm = "空";
                 newList.Add(w1);
+                i++;
+                continue;
+            }
+
+            // Combine 形状詞的 suffixes (げ) with preceding adjective stem
+            // e.g., 幼(adj-stem) + げ(suffix/形状詞的) → 幼げ
+            // Keep as IAdjective so な handler doesn't incorrectly merge (的な, がちな stay unchanged)
+            if (w1.PartOfSpeech == PartOfSpeech.Suffix
+                && w1.HasPartOfSpeechSection(PartOfSpeechSection.NaAdjectiveLike)
+                && newList.Count > 0
+                && newList[^1].PartOfSpeech == PartOfSpeech.IAdjective
+                && !newList[^1].Text.EndsWith("い"))
+            {
+                newList[^1].Text += w1.Text;
                 i++;
                 continue;
             }
@@ -2327,6 +2380,7 @@ public class MorphologicalAnalyser
                 && currentWord.Text != "なら"
                 && currentWord.Text != "なる"
                 && currentWord.DictionaryForm != "べし"
+                && currentWord.DictionaryForm is not "ごとし" and not "如し"
                 && currentWord.DictionaryForm != "ようだ"
                 && currentWord.DictionaryForm != "やがる"
                 && currentWord.DictionaryForm != "たり"
@@ -2450,8 +2504,17 @@ public class MorphologicalAnalyser
             if (wordInfos[i].PartOfSpeech != PartOfSpeech.Suffix)
                 continue;
 
+            // じまい (仕舞い) is a genuine suffix that attaches to verb ず-forms (e.g., わからずじまい)
+            if (wordInfos[i].DictionaryForm is "じまい" or "仕舞い")
+                continue;
+
             var prev = wordInfos[i - 1].PartOfSpeech;
             if (prev is PartOfSpeech.Noun or PartOfSpeech.CommonNoun or PartOfSpeech.Numeral or PartOfSpeech.Prefix or PartOfSpeech.Pronoun)
+                continue;
+
+            // Adjectival suffixes (形容詞的) like くさい, らしい, っぽい should keep their POS
+            // so the parser's Adjectival section check routes them through the verb/adj branch
+            if (wordInfos[i].PartOfSpeechSection1 == PartOfSpeechSection.Adjectival)
                 continue;
 
             wordInfos[i].PartOfSpeech = PartOfSpeech.CommonNoun;
