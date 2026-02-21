@@ -6,8 +6,9 @@ using Jiten.Core.Data.JMDict;
 using Jiten.Core.Utils;
 using Jiten.Parser.Data.Redis;
 using Jiten.Parser.Diagnostics;
+using Jiten.Parser.Runtime;
+using Jiten.Parser.Scoring;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Configuration;
 using StackExchange.Redis;
 using WanaKanaShaapu;
 
@@ -15,11 +16,9 @@ namespace Jiten.Parser
 {
     public static class Parser
     {
-        private static bool _initialized = false;
-        private static readonly SemaphoreSlim _initSemaphore = new SemaphoreSlim(1, 1);
-
         private static readonly bool UseCache = true;
         private static readonly bool UseRescue = true;
+        private static readonly ParserRuntime _parserRuntime = new();
         private static IDeckWordCache DeckWordCache = null!;
         private static IJmDictCache JmDictCache = null!;
 
@@ -46,7 +45,7 @@ namespace Jiten.Parser
         private static readonly HashSet<string> MisparsesRemove =
         [
             "そ", "る", "ま", "ふ", "ち", "ほ", "す", "じ", "なさ", "い", "ぴ", "ふあ", "ぷ", "ちゅ", "にっ", "じら", "タ", "け", "イ", "イッ", "ほっ", "そっ",
-            "ウー", "うー", "ううう", "うう", "ウウウウ", "ウウ", "ううっ", "かー", "ぐわー", "違", "タ"
+            "ウー", "うー", "ううう", "うう", "ウウウウ", "ウウ", "ううっ", "かー", "ぐわー", "違", "タ", "ッ"
         ];
 
         // Excluded (WordId, ReadingIndex) pairs to filter from final parsing results
@@ -57,60 +56,9 @@ namespace Jiten.Parser
             (1811220, 1), (2654270, 0), (2269410, 1), (2439040, 3), (2861095, 0), (2836250, 0),
             (1595910, 4), (2577750, 0), (1365520, 1), (1310720, 1), (1528180,1), (2866457,1),
             (2394370,4), (1203250,2), (1537250,2), (2783750,1), (2654250,0), (2609820,1),
-            (2080360,3), (1333240,2), (2035220,2), (5616612,5), (2249020,1), (2783700,1)
+            (2080360,3), (1333240,2), (2035220,2), (5616612,5), (2249020,1), (2783700,1),
+            (2411420,0)
         ];
-
-        private static async Task InitDictionaries()
-        {
-            var configuration = new ConfigurationBuilder()
-                                .SetBasePath(Directory.GetCurrentDirectory())
-                                .AddJsonFile(Path.Combine(Environment.CurrentDirectory, "..", "Shared", "sharedsettings.json"),
-                                             optional: true,
-                                             reloadOnChange: true)
-                                .AddJsonFile(Path.Combine("Shared", "sharedsettings.json"), optional: true, reloadOnChange: true)
-                                .AddJsonFile("sharedsettings.json", optional: true, reloadOnChange: true)
-                                .AddJsonFile("appsettings.json", optional: true, reloadOnChange: true)
-                                .AddEnvironmentVariables()
-                                .Build();
-
-            await using var context = await _contextFactory.CreateDbContextAsync();
-
-            var optionsBuilder = new DbContextOptionsBuilder<JitenDbContext>();
-            optionsBuilder.UseNpgsql(context.Database.GetConnectionString());
-
-            DeckWordCache = new RedisDeckWordCache(configuration);
-            JmDictCache = new RedisJmDictCache(configuration, _contextFactory);
-
-            _lookups = await JmDictHelper.LoadLookupTable(context);
-            _nameOnlyWordIds = await JmDictHelper.LoadNameOnlyWordIds(context);
-
-            // Check if cache is already initialized
-            if (!await JmDictCache.IsCacheInitializedAsync())
-            {
-                // Cache not initialized, load from database and populate Redis
-                var allWords = await JmDictHelper.LoadAllWords(context);
-
-                const int BATCH_SIZE = 10000;
-
-                // // Store lookups in Redis
-                // for (int i = 0; i < _lookups.Count; i += BATCH_SIZE)
-                // {
-                //     var lookupsBatch = _lookups.Skip(i).Take(BATCH_SIZE).ToDictionary(x => x.Key, x => x.Value);
-                //     await JmDictCache.SetLookupIdsAsync(lookupsBatch);
-                // }
-
-                // Store words in Redis using batching
-                for (int i = 0; i < allWords.Count; i += BATCH_SIZE)
-                {
-                    var wordsBatch = allWords.Skip(i).Take(BATCH_SIZE)
-                                             .ToDictionary(w => w.WordId, w => w);
-                    await JmDictCache.SetWordsAsync(wordsBatch);
-                }
-
-                // Mark cache as initialized
-                await JmDictCache.SetCacheInitializedAsync();
-            }
-        }
 
         public static async Task WarmupAsync(IDbContextFactory<JitenDbContext> contextFactory)
         {
@@ -120,21 +68,11 @@ namespace Jiten.Parser
         private static async Task EnsureInitializedAsync(IDbContextFactory<JitenDbContext> contextFactory)
         {
             _contextFactory = contextFactory;
-            if (_initialized) return;
-
-            await _initSemaphore.WaitAsync();
-            try
-            {
-                if (!_initialized)
-                {
-                    await InitDictionaries();
-                    _initialized = true;
-                }
-            }
-            finally
-            {
-                _initSemaphore.Release();
-            }
+            var runtime = await _parserRuntime.EnsureInitializedAsync(contextFactory);
+            DeckWordCache = runtime.DeckWordCache;
+            JmDictCache = runtime.JmDictCache;
+            _lookups = runtime.Lookups;
+            _nameOnlyWordIds = runtime.NameOnlyWordIds;
         }
 
         private static async Task PreprocessSentences(List<SentenceInfo> sentences)
@@ -448,8 +386,8 @@ namespace Jiten.Parser
 
                 for (int j = 0; j < batch.Count; j++)
                 {
-                    allProcessedWords.Add(batchResults[j]);
-                    if (applyRescue && batchResults[j] == null)
+                    allProcessedWords.Add(batchResults[j].Word);
+                    if (applyRescue && batchResults[j].ShouldRescue)
                         failedWords.Add((globalIndex, batch[j].wordInfo, batch[j].occurrences));
                     globalIndex++;
                 }
@@ -457,6 +395,9 @@ namespace Jiten.Parser
 
             if (applyRescue && UseRescue && failedWords.Count > 0)
             {
+                diagnostics?.RunSummary.AddRescueInvocations(failedWords.Count);
+                diagnostics?.RunSummary.AddRescueCandidates(failedWords.Count);
+
                 var rescueInput = failedWords.Select(f => (f.wordInfo, f.occurrences)).ToList();
                 var rescuedGroups = await RescueFailedWords(rescueInput, deconjugator);
 
@@ -465,6 +406,11 @@ namespace Jiten.Parser
                 {
                     var adjustedIndex = failedWords[i].index + offset;
                     var rescuedGroup = rescuedGroups[i];
+
+                    if (rescuedGroup.Count > 0)
+                        diagnostics?.RunSummary.IncrementRescueRecoveredCount();
+                    else
+                        diagnostics?.RunSummary.IncrementRescueUnresolvedCount();
 
                     allProcessedWords.RemoveAt(adjustedIndex);
                     allProcessedWords.InsertRange(adjustedIndex, rescuedGroup);
@@ -645,15 +591,43 @@ namespace Jiten.Parser
         // Limit how many concurrent operations we perform to prevent overwhelming the system
         private static readonly SemaphoreSlim _processSemaphore = new SemaphoreSlim(100, 100);
 
-        private static async Task<DeckWord?> ProcessWord((WordInfo wordInfo, int occurrences) wordData, Deconjugator deconjugator,
-                                                         ParserDiagnostics? diagnostics = null)
+        private enum ProcessWordStatus
+        {
+            Resolved,
+            FilteredOut,
+            TimedOut,
+            Unresolved
+        }
+
+        private readonly struct ProcessWordResult
+        {
+            private ProcessWordResult(ProcessWordStatus status, DeckWord? word = null)
+            {
+                Status = status;
+                Word = word;
+            }
+
+            public ProcessWordStatus Status { get; }
+            public DeckWord? Word { get; }
+            public bool ShouldRescue => Status is ProcessWordStatus.TimedOut or ProcessWordStatus.Unresolved;
+
+            public static ProcessWordResult FromResolved(DeckWord word) => new(ProcessWordStatus.Resolved, word);
+            public static ProcessWordResult FilteredOut { get; } = new(ProcessWordStatus.FilteredOut);
+            public static ProcessWordResult TimedOut { get; } = new(ProcessWordStatus.TimedOut);
+            public static ProcessWordResult Unresolved { get; } = new(ProcessWordStatus.Unresolved);
+        }
+
+        private static async Task<ProcessWordResult> ProcessWord((WordInfo wordInfo, int occurrences) wordData, Deconjugator deconjugator,
+                                                                 ParserDiagnostics? diagnostics = null)
         {
             // Try to acquire semaphore with timeout to prevent deadlock
             if (!await _processSemaphore.WaitAsync(TimeSpan.FromSeconds(5)))
             {
-                // If we can't get the semaphore in a reasonable time, just return null
+                // If we can't get the semaphore in a reasonable time, surface an explicit timeout status.
                 // This is better than hanging indefinitely
-                return null;
+                diagnostics?.RunSummary.IncrementProcessSemaphoreTimeoutCount();
+                diagnostics?.RunSummary.IncrementUnresolvedTokenCount();
+                return ProcessWordResult.TimedOut;
             }
 
             try
@@ -663,7 +637,7 @@ namespace Jiten.Parser
                 if (textWithoutBar.Length > 0 && textWithoutBar.All(char.IsDigit) ||
                     (textWithoutBar.Length == 1 && textWithoutBar.IsAsciiOrFullWidthLetter()))
                 {
-                    return null;
+                    return ProcessWordResult.FilteredOut;
                 }
 
                 var isNameLikeSudachiNoun = PosMapper.IsNameLikeSudachiNoun(
@@ -689,13 +663,14 @@ namespace Jiten.Parser
 
                         if (cachedWord != null && cachedWord.WordId != -1)
                         {
-                            return new DeckWord
-                                   {
-                                       WordId = cachedWord.WordId, OriginalText = wordData.wordInfo.Text,
-                                       ReadingIndex = cachedWord.ReadingIndex, Occurrences = wordData.occurrences,
-                                       Conjugations = cachedWord.Conjugations, PartsOfSpeech = cachedWord.PartsOfSpeech,
-                                       Origin = cachedWord.Origin, SudachiReading = wordData.wordInfo.Reading
-                                   };
+                            return ProcessWordResult.FromResolved(
+                                new DeckWord
+                                {
+                                    WordId = cachedWord.WordId, OriginalText = wordData.wordInfo.Text,
+                                    ReadingIndex = cachedWord.ReadingIndex, Occurrences = wordData.occurrences,
+                                    Conjugations = cachedWord.Conjugations, PartsOfSpeech = cachedWord.PartsOfSpeech,
+                                    Origin = cachedWord.Origin, SudachiReading = wordData.wordInfo.Reading
+                                });
                         }
                     }
                     catch (Exception ex)
@@ -802,6 +777,10 @@ namespace Jiten.Parser
                                 wordData.wordInfo.PartOfSpeech = oldPos;
                                 processedWord = verbResult.word;
                             }
+                            else if (wordData.wordInfo.PartOfSpeech is PartOfSpeech.Pronoun or PartOfSpeech.Conjunction or PartOfSpeech.Interjection)
+                            {
+                                processedWord = nounResult.word;
+                            }
                             else
                             {
                                 // Also try verb deconjugation: noun-tagged tokens may be verb stems
@@ -902,13 +881,16 @@ namespace Jiten.Parser
 
                 if (processedWord == null)
                 {
-                    return processedWord;
+                    diagnostics?.RunSummary.IncrementUnresolvedTokenCount();
+                    return ProcessWordResult.Unresolved;
                 }
 
                 processedWord.Occurrences = wordData.occurrences;
                 processedWord.SudachiReading = wordData.wordInfo.Reading;
 
-                if (!UseCache) return processedWord;
+                if (!UseCache)
+                    return ProcessWordResult.FromResolved(processedWord);
+
                 try
                 {
                     await DeckWordCache.SetAsync(cacheKey,
@@ -925,7 +907,7 @@ namespace Jiten.Parser
                 }
 
 
-                return processedWord;
+                return ProcessWordResult.FromResolved(processedWord);
             }
             finally
             {
@@ -1324,7 +1306,8 @@ namespace Jiten.Parser
                             {
                                 var normalizedWordCache = await JmDictCache.GetWordsAsync(normalizedLookup);
                                 var recoveredProcess = deconjugated
-                                                       .Where(d => d.Process.Count > 0 && d.Text.StartsWith(normalizedHiragana))
+                                                       .Where(d => d.Process.Count > 0 &&
+                                                                    (d.Text.StartsWith(normalizedHiragana) || d.Text.StartsWith(baseDictionaryWord)))
                                                        .MinBy(d => d.Text.Length)?.Process
                                                        ?.Where(p => !string.IsNullOrEmpty(p)).ToList() ?? [];
                                 foreach (var normalizedWord in normalizedWordCache.Values)
@@ -1398,7 +1381,7 @@ namespace Jiten.Parser
                                 {
                                     WordId = bestPair.Word.WordId, OriginalText = wordData.wordInfo.Text,
                                     ReadingIndex = bestPair.ReadingIndex, Occurrences = wordData.occurrences,
-                                    Conjugations = bestPair.DeconjForm?.Process ?? [],
+                                    Conjugations = bestPair.DeconjForm?.Process.ToList() ?? [],
                                     PartsOfSpeech = bestPair.Word.PartsOfSpeech.ToPartOfSpeech(), Origin = bestPair.Word.Origin
                                 };
 
@@ -1407,23 +1390,7 @@ namespace Jiten.Parser
 
         public static async Task<List<DeckWord>> GetWordsDirectLookup(IDbContextFactory<JitenDbContext> contextFactory, List<string> words)
         {
-            _contextFactory = contextFactory;
-            if (!_initialized)
-            {
-                await _initSemaphore.WaitAsync();
-                try
-                {
-                    if (!_initialized) // Double-check to avoid race conditions
-                    {
-                        await InitDictionaries();
-                        _initialized = true;
-                    }
-                }
-                finally
-                {
-                    _initSemaphore.Release();
-                }
-            }
+            await EnsureInitializedAsync(contextFactory);
 
             List<DeckWord> matchedWords = new();
 
@@ -1713,7 +1680,7 @@ namespace Jiten.Parser
                                             match = new DeckWord
                                                     {
                                                         WordId = bestMatch.WordId, OriginalText = candidate, ReadingIndex = readingIndex,
-                                                        Occurrences = occurrences, Conjugations = form.Process,
+                                                        Occurrences = occurrences, Conjugations = form.Process.ToList(),
                                                         PartsOfSpeech = bestMatch.PartsOfSpeech.ToPartOfSpeech(), Origin = bestMatch.Origin,
                                                         SudachiReading = GetKatakanaReading(bestMatch, readingIndex)
                                                     };
@@ -2262,6 +2229,8 @@ namespace Jiten.Parser
             }
         }
 
+        private static readonly HashSet<string> NounCompoundExclusions = ["おつもり"];
+
         private static void CombineNounCompounds(List<SentenceInfo> sentences)
         {
             foreach (var sentence in sentences)
@@ -2278,6 +2247,33 @@ namespace Jiten.Parser
 
                     if (!PosMapper.IsNounForCompounding(word.PartOfSpeech))
                     {
+                        // When an adjective stem is followed by a noun-like token, try combining them.
+                        // Sudachi sometimes splits kana compounds like でかぶつ into でか (形容詞) + ぶつ (接尾辞),
+                        // or ながもの into なが (形容詞) + もの (名詞).
+                        if (word.PartOfSpeech == PartOfSpeech.IAdjective &&
+                            i + 1 < sentence.Words.Count &&
+                            PosMapper.IsNounForCompounding(sentence.Words[i + 1].word.PartOfSpeech))
+                        {
+                            var combinedText = word.Text + sentence.Words[i + 1].word.Text;
+                            if (_lookups.TryGetValue(combinedText, out var adjSuffixIds) && adjSuffixIds.Count > 0 &&
+                                !adjSuffixIds.All(id => _nameOnlyWordIds.Contains(id)))
+                            {
+                                var combinedReading = word.Reading + sentence.Words[i + 1].word.Reading;
+                                int combinedLength = length + sentence.Words[i + 1].length;
+                                var combinedWord = new WordInfo(word)
+                                                   {
+                                                       Text = combinedText, DictionaryForm = combinedText,
+                                                       PartOfSpeech = PartOfSpeech.Noun, NormalizedForm = combinedText,
+                                                       Reading = WanaKana.ToHiragana(combinedReading,
+                                                           new DefaultOptions { ConvertLongVowelMark = false }),
+                                                       PreMatchedWordId = null
+                                                   };
+                                result.Add((combinedWord, position, combinedLength));
+                                i += 2;
+                                continue;
+                            }
+                        }
+
                         result.Add(sentence.Words[i]);
                         i++;
                         continue;
@@ -2311,6 +2307,9 @@ namespace Jiten.Parser
 
                         // Combine the text
                         var combinedText = string.Concat(sentence.Words.Skip(i).Take(windowSize).Select(w => w.word.Text));
+
+                        if (NounCompoundExclusions.Contains(combinedText))
+                            continue;
 
                         // Check if it exists in JMDict lookups — skip name-only matches
                         // when none of the constituent tokens are name-like
@@ -2469,6 +2468,29 @@ namespace Jiten.Parser
             var result = await TryMatchCompoundWindow(wordInfos, wordIndex, lastConsumedIndex, dictForm);
             if (result.HasValue) return result;
 
+            // Try intermediate deconjugation forms for compound expressions whose JMDict entry
+            // includes a conjugation stem (e.g. 臆病風に吹かれる: dictForm is 吹く but the
+            // lookup key contains the passive form 吹かれる)
+            if (dictForm != verb.Text && verb.Text.Length > dictForm.Length)
+            {
+                var deconj = Deconjugator.Instance.Deconjugate(verb.Text);
+                var intermediates = new HashSet<string>(StringComparer.Ordinal);
+                foreach (var form in deconj)
+                {
+                    foreach (var seen in form.SeenText)
+                    {
+                        if (seen.Length > dictForm.Length && seen.Length < verb.Text.Length)
+                            intermediates.Add(seen);
+                    }
+                }
+
+                foreach (var intermediate in intermediates.OrderByDescending(s => s.Length))
+                {
+                    result = await TryMatchCompoundWindow(wordInfos, wordIndex, lastConsumedIndex, intermediate);
+                    if (result.HasValue) return result;
+                }
+            }
+
             // Fallback: try deconjugated forms for conjugated compound expressions
             // Only when Sudachi didn't deconjugate (dictForm == surface text) AND the token
             // contains kanji. Pure-kana tokens (いい, じゃない) are already in dictionary form;
@@ -2506,6 +2528,10 @@ namespace Jiten.Parser
 
                 var firstWord = wordInfos[startIndex];
                 if (firstWord.PartOfSpeech == PartOfSpeech.Particle)
+                    continue;
+                if (firstWord.PartOfSpeech == PartOfSpeech.Conjunction && firstWord.Text.Length == 1)
+                    continue;
+                if (firstWord.WasReclassifiedFromSuffix)
                     continue;
 
                 bool expressionOnly = firstWord.PartOfSpeech == PartOfSpeech.Suffix;
@@ -2640,23 +2666,6 @@ namespace Jiten.Parser
 
         #region Form-based pair scoring
 
-        private record FormCandidate(
-            JmDictWord Word,
-            JmDictWordForm Form,
-            byte ReadingIndex,
-            string TargetHiragana,
-            DeconjugationForm? DeconjForm = null)
-        {
-            public int TotalScore { get; set; }
-            public int WordScore { get; set; }
-            public int EntryPriorityScore { get; set; }
-            public int FormPriorityScore { get; set; }
-            public int FormFlagScore { get; set; }
-            public int SurfaceMatchScore { get; set; }
-            public int ScriptScore { get; set; }
-            public int ReadingMatchScore { get; set; }
-        }
-
         private static List<FormCandidate> EnumerateCandidateForms(
             JmDictWord word,
             string targetHiragana,
@@ -2718,302 +2727,6 @@ namespace Jiten.Parser
             return hasNoun && hasSuru && !hasExpression;
         }
 
-        private static int ScoreFormCandidate(
-            FormCandidate candidate,
-            string surface,
-            string? dictionaryForm,
-            string? normalizedForm,
-            bool isNameContext,
-            string? sudachiReading = null)
-        {
-            var word = candidate.Word;
-            var form = candidate.Form;
-            bool isKana = WanaKana.IsKana(surface);
-
-            // 1) WordScore
-            int wordScore = 0;
-            if (word.Priorities?.Contains("jiten") == true)
-                wordScore += 100;
-            if (!isNameContext && word.PartsOfSpeech.ToPartOfSpeech().Contains(PartOfSpeech.Name))
-                wordScore -= 50;
-            if (word.IsFullyArchaic)
-            {
-                bool hasFrequencyMarker = word.Priorities?.Any(p =>
-                    p is "ichi1" or "ichi2" or "news1" or "news2" or "jiten" || p.StartsWith("nf")) == true;
-                if (!hasFrequencyMarker)
-                    wordScore -= 200;
-            }
-            if (word.PartsOfSpeech.Any(ArchaicPosTypes.Contains))
-                wordScore -= 75;
-
-            // Deconjugation chain length: shorter chains indicate a more direct
-            // morphological match and are more likely correct for homophone disambiguation
-            int chainCount = candidate.DeconjForm?.Process?.Count ?? 0;
-            if (chainCount <= 2)
-                wordScore += 8;
-            else
-                wordScore -= 8 * (chainCount - 2);
-
-            // 2) EntryPriorityScore — global word frequency from word-level priorities
-            int entryPriorityScore = 0;
-            var wordPri = word.Priorities ?? [];
-            if (wordPri.Contains("ichi1")) entryPriorityScore += 20;
-            if (wordPri.Contains("ichi2")) entryPriorityScore += 10;
-            if (wordPri.Contains("news1")) entryPriorityScore += 15;
-            if (wordPri.Contains("news2")) entryPriorityScore += 10;
-            if (wordPri.Contains("gai1")) entryPriorityScore += 15;
-            if (wordPri.Contains("gai2")) entryPriorityScore += 10;
-
-            var wnf = wordPri.FirstOrDefault(p => p.StartsWith("nf"));
-            if (wnf is { Length: > 2 } && int.TryParse(wnf[2..], out var wnfRank))
-            {
-                entryPriorityScore += Math.Max(0, 5 - (int)Math.Round(wnfRank / 10f));
-                if (wnfRank <= 5)
-                    entryPriorityScore += 6 - wnfRank;
-            }
-
-            if (entryPriorityScore == 0)
-            {
-                if (wordPri.Contains("spec1")) entryPriorityScore += 15;
-                if (wordPri.Contains("spec2")) entryPriorityScore += 5;
-            }
-            else
-            {
-                if (wordPri.Contains("spec1")) entryPriorityScore += 4;
-                if (wordPri.Contains("spec2")) entryPriorityScore += 2;
-            }
-
-            // 3) FormPriorityScore — orthography preference (halved; tie-breaker only)
-            int formPriorityScore = 0;
-            var priorities = form.Priorities ?? [];
-            if (priorities.Contains("ichi1")) formPriorityScore += 10;
-            if (priorities.Contains("ichi2")) formPriorityScore += 5;
-            if (priorities.Contains("news1")) formPriorityScore += 8;
-            if (priorities.Contains("news2")) formPriorityScore += 5;
-            if (priorities.Contains("gai1")) formPriorityScore += 8;
-            if (priorities.Contains("gai2")) formPriorityScore += 5;
-
-            var nf = priorities.FirstOrDefault(p => p.StartsWith("nf"));
-            if (nf != null && nf.Length > 2 && int.TryParse(nf[2..], out var nfRank))
-            {
-                formPriorityScore += Math.Max(0, 3 - (int)Math.Round(nfRank / 10f));
-            }
-
-            if (formPriorityScore == 0)
-            {
-                if (priorities.Contains("spec1")) formPriorityScore += 8;
-                if (priorities.Contains("spec2")) formPriorityScore += 3;
-            }
-
-            // "uk" (usually-kana) bias — scaled by word frequency so rare uk words
-            // don't beat common non-uk words (e.g. 擤む "blow nose" vs 噛む "bite")
-            if (word.PartsOfSpeech.Contains("uk"))
-            {
-                bool hasFreqMarker = wordPri.Any(p =>
-                    p is "ichi1" or "ichi2" or "news1" or "news2" || p.StartsWith("nf"));
-                int ukBonus = hasFreqMarker ? 10 : 3;
-                if (form.FormType == JmDictFormType.KanaForm || isKana)
-                    formPriorityScore += ukBonus;
-                else
-                    formPriorityScore -= ukBonus;
-            }
-
-            // 4) FormFlagScore
-            int formFlagScore = 0;
-            bool formMatchesSurface = surface == form.Text
-                                      || (candidate.DeconjForm != null && candidate.DeconjForm.Text == form.Text);
-            if (form.IsSearchOnly)
-                formFlagScore += formMatchesSurface ? 0 : -300;
-            if (form.IsObsolete)
-                formFlagScore += formMatchesSurface ? 0 : -150;
-            if (!form.IsActiveInLatestSource)
-                formFlagScore -= 30;
-            bool isPureKanaWord = word.Forms.All(f => f.FormType != JmDictFormType.KanjiForm);
-            if (isPureKanaWord && form.FormType == JmDictFormType.KanaForm && isKana)
-                formFlagScore += 20;
-
-            // 5) SurfaceMatchScore
-            int surfaceMatchScore = 0;
-            var surfaceHira = KanaNormalizer.Normalize(
-                                                       WanaKana.ToHiragana(surface, new DefaultOptions { ConvertLongVowelMark = false }));
-            var formHira = KanaNormalizer.Normalize(
-                                                    WanaKana.ToHiragana(form.Text, new DefaultOptions { ConvertLongVowelMark = false }));
-
-            if (surface == form.Text)
-                surfaceMatchScore += 300;
-            else if (surfaceHira == formHira)
-                surfaceMatchScore += 120;
-            else
-            {
-                // Loose normalisation match (long vowel mark / small-tsu handling)
-                var surfaceLoose = KanaNormalizer.Normalize(WanaKana.ToHiragana(surface));
-                var formLoose = KanaNormalizer.Normalize(WanaKana.ToHiragana(form.Text));
-                if (surfaceLoose == formLoose)
-                    surfaceMatchScore += 60;
-            }
-
-            // Scale factor for deep deconjugation chains: after auxiliary merging,
-            // Sudachi's dictionaryForm/normalizedForm reflect the pre-merge token, not the combined surface
-            double lemmaScale = 1.0;
-            if (candidate.DeconjForm?.Process is { Count: > 0 } deconjProcess)
-                lemmaScale = Math.Max(0.0, 1.0 - (deconjProcess.Count - 1) * 0.35);
-
-            // Lemma match — only when dictionaryForm differs from surface
-            if (!string.IsNullOrEmpty(dictionaryForm) && dictionaryForm != surface)
-            {
-                if (dictionaryForm == form.Text)
-                {
-                    // Exact Sudachi DictionaryForm match: use a minimum floor so that deep
-                    // deconjugation chains (e.g. ぬかるんでた → ぬかるむ via teru contraction)
-                    // don't completely nullify Sudachi's identification
-                    double effectiveScale = Math.Max(0.3, lemmaScale);
-                    surfaceMatchScore += (int)(100 * effectiveScale);
-                }
-                else
-                {
-                    var dictHira = KanaNormalizer.Normalize(
-                                                            WanaKana.ToHiragana(dictionaryForm,
-                                                                                new DefaultOptions { ConvertLongVowelMark = false }));
-                    if (dictHira == formHira)
-                        surfaceMatchScore += (int)(40 * lemmaScale);
-                }
-            }
-
-            // NormalizedForm bonus — only when it differs from both surface and dictionaryForm
-            // Scale by lemmaScale: for deep chains, Sudachi's normalizedForm is less reliable
-            if (!string.IsNullOrEmpty(normalizedForm) && normalizedForm != surface && normalizedForm != dictionaryForm)
-            {
-                if (normalizedForm == form.Text)
-                    surfaceMatchScore += (int)(50 * lemmaScale);
-                else
-                {
-                    var normHira = KanaNormalizer.Normalize(
-                                                            WanaKana.ToHiragana(normalizedForm,
-                                                                                new DefaultOptions { ConvertLongVowelMark = false }));
-                    if (normHira == formHira)
-                        surfaceMatchScore += (int)(20 * lemmaScale);
-
-                    // Sudachi's NormalizedForm is kanji but candidate form is kana —
-                    // check if the word owns that kanji form to disambiguate homophones
-                    // (e.g. ふう: 風 "style" vs 封 "seal" — Sudachi says 風)
-                    if (word.Forms.Any(f => f.Text == normalizedForm))
-                        surfaceMatchScore += (int)(30 * lemmaScale);
-                }
-            }
-
-            // Deconjugation-based lemma fallback: when DictionaryForm is unreliable (e.g., Sudachi
-            // misclassified 飛んで as Expression with DictionaryForm=飛んで, then ProcessSpecialCases
-            // derived an approximate DictionaryForm that may not match any form text), the standard
-            // lemma match above gives 0. Use the deconjugated base form as evidence instead.
-            if (candidate.DeconjForm?.Text != null && surfaceMatchScore == 0)
-            {
-                var deconjHira = KanaNormalizer.Normalize(
-                    WanaKana.ToHiragana(candidate.DeconjForm.Text, new DefaultOptions { ConvertLongVowelMark = false }));
-                if (deconjHira == formHira)
-                    surfaceMatchScore += (int)(100 * lemmaScale);
-            }
-
-            // Penalise identity matches when Sudachi indicates the surface is a conjugated form.
-            // e.g. やろう (surface) with dictionaryForm やる: the expression entry やろう ("seems")
-            // should not outscore the deconjugated verb やる ("to do") via the surface match bonus.
-            // Also zero the reading match: the Sudachi reading is the conjugated form's reading,
-            // not evidence for this entry (e.g. 飛んで reading=とんで matching exp entry, not 飛ぶ te-form).
-            bool conjugatedIdentityPenalty = false;
-            if (!string.IsNullOrEmpty(dictionaryForm) && dictionaryForm != surface
-                && surface == form.Text
-                && (candidate.DeconjForm == null || candidate.DeconjForm.Process.Count == 0))
-            {
-                surfaceMatchScore -= 200;
-                conjugatedIdentityPenalty = true;
-            }
-
-            // 6) ScriptScore
-            int scriptScore = 5 * GetCommonPrefixLen(surface, form.Text);
-
-            // Ichidan stem bonus: when the surface starts with an ichidan verb's stem
-            // (form minus final る), it strongly suggests the surface is a conjugation of
-            // that verb rather than a godan homophone (e.g. ふるえ → 震える not 奮う)
-            if (form.Text.Length > 2
-                && form.Text[^1] == 'る'
-                && word.PartsOfSpeech.Any(p => p is "v1" or "v1-s")
-                && surface.StartsWith(form.Text[..^1]))
-            {
-                int stemLen = form.Text.Length - 1;
-                scriptScore += Math.Min(15, stemLen * 5);
-            }
-
-            // 7) ReadingMatchScore — Sudachi reading disambiguation for homographic kanji
-            int readingMatchScore = 0;
-            if (!string.IsNullOrEmpty(sudachiReading) && !isKana)
-            {
-                var sudachiHira = KanaNormalizer.Normalize(
-                                                           WanaKana.ToHiragana(sudachiReading,
-                                                                               new DefaultOptions { ConvertLongVowelMark = false }));
-                bool hasMatchingReading = word.Forms
-                                              .Where(f => f.FormType == JmDictFormType.KanaForm)
-                                              .Any(f => KanaNormalizer.Normalize(
-                                                                                 WanaKana.ToHiragana(f.Text,
-                                                                                     new DefaultOptions
-                                                                                     {
-                                                                                         ConvertLongVowelMark = false
-                                                                                     })) == sudachiHira);
-                if (hasMatchingReading)
-                    readingMatchScore += 50;
-                // Prefix match — for ichidan conjugated stems (e.g. かくれ from 隠れる)
-                // the Sudachi reading is the dictionary kana form minus the final る.
-                else if (sudachiHira.Length > 1
-                         && word.Forms
-                                .Where(f => f.FormType == JmDictFormType.KanaForm)
-                                .Any(f =>
-                                {
-                                    var hiragana = KanaNormalizer.Normalize(
-                                        WanaKana.ToHiragana(f.Text,
-                                            new DefaultOptions { ConvertLongVowelMark = false }));
-                                    return hiragana.Length > sudachiHira.Length
-                                           && hiragana.StartsWith(sudachiHira);
-                                }))
-                    readingMatchScore += 50;
-                // Stem fallback — for godan conjugated stems (e.g. ヒラカ from ひらく)
-                // strip the last kana from both and compare stems to disambiguate.
-                else if (sudachiHira.Length > 1)
-                {
-                    var sudachiStem = sudachiHira[..^1];
-                    bool hasStemMatch = word.Forms
-                                            .Where(f => f.FormType == JmDictFormType.KanaForm)
-                                            .Any(f =>
-                                            {
-                                                var hiragana = KanaNormalizer.Normalize(
-                                                                                        WanaKana.ToHiragana(f.Text,
-                                                                                            new DefaultOptions
-                                                                                            {
-                                                                                                ConvertLongVowelMark = false
-                                                                                            }));
-
-                                                return hiragana.Length > 1 && hiragana[..^1] == sudachiStem;
-                                            });
-                    if (hasStemMatch)
-                        readingMatchScore += 25;
-                }
-            }
-
-            if (conjugatedIdentityPenalty)
-                readingMatchScore = 0;
-
-            int total = wordScore + entryPriorityScore + formPriorityScore + formFlagScore + surfaceMatchScore + scriptScore +
-                        readingMatchScore;
-
-            candidate.WordScore = wordScore;
-            candidate.EntryPriorityScore = entryPriorityScore;
-            candidate.FormPriorityScore = formPriorityScore;
-            candidate.FormFlagScore = formFlagScore;
-            candidate.SurfaceMatchScore = surfaceMatchScore;
-            candidate.ScriptScore = scriptScore;
-            candidate.ReadingMatchScore = readingMatchScore;
-            candidate.TotalScore = total;
-
-            return total;
-        }
-
         private static FormCandidate? PickBestFormCandidate(
             List<FormCandidate> allCandidates,
             string surface,
@@ -3023,60 +2736,14 @@ namespace Jiten.Parser
             ParserDiagnostics? diagnostics = null,
             string? sudachiReading = null)
         {
-            if (allCandidates.Count == 0)
-                return null;
+            var context = FormScoringContext.Create(
+                surface,
+                dictionaryForm,
+                normalizedForm,
+                isNameContext,
+                sudachiReading);
 
-            FormCandidate? best = null;
-            int bestScore = int.MinValue;
-
-            foreach (var candidate in allCandidates)
-            {
-                int score = ScoreFormCandidate(candidate, surface, dictionaryForm, normalizedForm, isNameContext, sudachiReading);
-                if (score > bestScore ||
-                    (score == bestScore && best != null && candidate.Word.WordId < best.Word.WordId))
-                {
-                    bestScore = score;
-                    best = candidate;
-                }
-            }
-
-            if (diagnostics == null || best == null)
-                return best;
-
-            var topCandidates = allCandidates
-                                .OrderByDescending(c => c.TotalScore)
-                                .Take(10)
-                                .Select(c => new Diagnostics.FormCandidateDiagnostic
-                                             {
-                                                 WordId = c.Word.WordId, FormText = c.Form.Text, ReadingIndex = c.ReadingIndex,
-                                                 IsSelected = ReferenceEquals(c, best), TotalScore = c.TotalScore, WordScore = c.WordScore,
-                                                 EntryPriorityScore = c.EntryPriorityScore, FormPriorityScore = c.FormPriorityScore,
-                                                 FormFlagScore = c.FormFlagScore, SurfaceMatchScore = c.SurfaceMatchScore,
-                                                 ScriptScore = c.ScriptScore, ReadingMatchScore = c.ReadingMatchScore
-                                             })
-                                .ToList();
-
-            diagnostics.Results.Add(new Diagnostics.WordResult
-                                    {
-                                        Text = surface, DictionaryForm = dictionaryForm,
-                                        Reading = sudachiReading, WordId = best.Word.WordId,
-                                        ReadingIndex = best.ReadingIndex, Candidates = topCandidates
-                                    });
-
-            return best;
-        }
-
-        private static int GetCommonPrefixLen(string s1, string s2)
-        {
-            int len = Math.Min(s1.Length, s2.Length);
-            int match = 0;
-            for (int i = 0; i < len; i++)
-            {
-                if (s1[i] == s2[i]) match++;
-                else break;
-            }
-
-            return match;
+            return FormCandidateSelector.PickBestCandidate(allCandidates, context, ArchaicPosTypes, diagnostics);
         }
 
         #endregion

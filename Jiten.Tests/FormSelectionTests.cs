@@ -226,6 +226,10 @@ public class FormSelectionTests
         // ReclassifyOrphanedSuffixes preserves Suffix POS after Pronoun; POS compatibility matches suf
         yield return ["彼女たちは家を預かるプロフェッショナル", "たち", 1416220, (byte)1];
 
+        // たち after suffix 者 → 達/pluralising suffix (1416220), not 断つ verb (1597030)
+        // ReclassifyOrphanedSuffixes preserves Suffix POS after another Suffix; POS compatibility matches suf
+        yield return ["覚醒者たちの頂点を極める存在となり", "たち", 1416220, (byte)1];
+
         // うわッ → うわっ interjection (2061250, reading index 2), not split into う + わッ
         yield return ["うわッ人呼んでる", "うわッ", 2061250, (byte)2];
 
@@ -347,9 +351,40 @@ public class FormSelectionTests
         yield return ["いなくなった隙に奪い取る", "隙", 1253780, (byte)0];
         yield return ["意識が幼獣に向いている隙に攻撃を加えれば", "隙", 1253780, (byte)0];
 
+        // クスクス → onomatopoeia "chuckle/giggle" (2007850), not couscous (2002980) or cuscus animal (2853576)
+        // on-mim POS bonus breaks the three-way tie in favour of the mimetic word
+        yield return ["クスクスと笑う", "クスクス", 2007850, (byte)1];
+        yield return ["わたしはクスクスと笑う。", "クスクス", 2007850, (byte)1];
+
         // ぬかるんで → 泥濘む/ぬかるむ "to become muddy" (2009310), not 抜かる "to make a mistake" (1478130)
         // Sudachi DictionaryForm lemma floor ensures deep deconjugation chains don't nullify Sudachi's identification
         yield return ["下がぬかるんでたから受け止めた拍子に足を滑らせただけだぞ", "ぬかるんでた", 2009310, (byte)1];
+
+        // 割れ as ichidan verb 連用形 → 割れる "to break" (1208020), not noun 割れ "broken piece" (1208010)
+        // Sudachi misclassifies as noun in sentence 1; GetPriorityScore fallback picks the verb (ichi1)
+        yield return ["壁が大きくきしみ割れ無数の破片へと砕けて十三階の高さから落ちてゆく。", "割れ", 1208020, (byte)0];
+        yield return ["爪が割れ剥がれそうになる…。", "割れ", 1208020, (byte)0];
+
+        // やつら → 奴ら "they/those guys" (1913290), not つら "face" (1584690)
+        yield return ["やつらの思うつぼだ", "やつら", 1913290, (byte)4];
+
+        // ガラ (katakana) → 柄/character (1508300), not gala (2834398)
+        // Pure kana-script difference scoring lets high-priority 柄 overcome the exact-match advantage of gala
+        yield return ["ガラじゃないしさ", "ガラ", 1508300, (byte)1];
+        yield return ["俺だってガラじゃないのは分かってるんだから", "ガラ", 1508300, (byte)1];
+
+        // くすん → sniff/sniffle onomatopoeia (2130690), not くすむ/to be dull (1957380)
+        // User dic overrides Sudachi 動詞(くすむ撥音便)→副詞 for the common onomatopoeia
+        yield return ["くすんと鼻を鳴らし", "くすん", 2130690, (byte)0];
+
+        // リス → 栗鼠/squirrel (1246890), not 離/fracture (1141430)
+        // Sudachi NormalizedForm 栗鼠 matches squirrel's kanji form, overcoming fracture's gai1 priority
+        yield return ["リスのように膨らんだ色白の頬に食べ滓がついている。", "リス", 1246890, (byte)2];
+        yield return ["ところがぼくは小林君というリスのようにすばしっこい助手を持っていました。", "リス", 1246890, (byte)2];
+
+        // つうか → conjunction "or rather" (2848301), not 通過 "passing through" (1433070)
+        // User dic tokenizes as single token; Conjunction POS skips verb-fallback priority comparison
+        yield return ["つうか何を迷走しているんだ。", "つうか", 2848301, (byte)5];
 
     }
 

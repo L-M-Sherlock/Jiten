@@ -226,7 +226,8 @@ public class MorphologicalAnalyserTests
         yield return ["入り込めなかった", new[] { "入り込めなかった" }];
         yield return ["がいまいちなんだよ", new[] { "が", "いまいち", "なんだ", "よ" }];
         yield return ["脱がしにかかってる", new[] { "脱がし", "に", "かかってる" }];
-        yield return ["必死になってる", new[] { "必死", "に", "なってる" }];
+        yield return ["必死になってる", new[] { "必死になってる" }];
+        yield return ["臆病風に吹かれていた", new[] { "臆病風に吹かれていた" }];
         yield return ["安心させた", new[] { "安心", "させた" }];
         yield return ["人が好きそうだ", new[] { "人", "が", "好きそう", "だ" }];
         yield return ["もっていこうとする", new[] { "もっていこう", "とする" }];
@@ -546,6 +547,7 @@ public class MorphologicalAnalyserTests
         yield return ["客を待ってるんだけど", new[] { "客", "を", "待ってる", "んだ", "けど" }];
         yield return ["学生さんだって", new[] { "学生", "さん", "だって" }];
         yield return ["ちょっと休憩ーなんて言って", new[] { "ちょっと", "休憩", "なんて", "言って" }];
+        yield return ["なんて女だって思われる", new[] { "なんて", "女", "だって", "思われる" }];
         yield return ["絶対に戻らなきゃいけない", new[] { "絶対", "に", "戻らなきゃ", "いけない" }];
         yield return ["とてもいい品が買えました", new[] { "とても", "いい", "品", "が", "買えました" }];
         // JMDict compound noun tests (Mode B refactor)
@@ -705,6 +707,37 @@ public class MorphologicalAnalyserTests
         yield return ["気附かぬ如くゆっくり", new[] { "気附かぬ", "如く", "ゆっくり" }];
         // Standalone ぬ reclassified from archaic verb 寝 to classical negative auxiliary
         yield return ["ぬ如く", new[] { "ぬ", "如く" }];
+        // Adjective stem + ぶり suffix recombined (Sudachi splits 久しぶり after よっ interjection)
+        yield return ["よっ久しぶり", new[] { "よっ", "久しぶり" }];
+        // おつもり → お (prefix) + つもり (intention), not おつもり (last drink of sake, 2850128)
+        yield return ["するおつもりですか", new[] { "する", "お", "つもり", "ですか" }];
+        yield return ["庇護するおつもりでいる", new[] { "庇護する", "お", "つもり", "で", "いる" }];
+        yield return ["どうするおつもりです", new[] { "どう", "する", "お", "つもり", "です" }];
+        // 首落とさねえ — Sudachi greedily matches 首落(ち) as compound noun, breaking 落とさねえ
+        yield return ["首落とさねえ", new[] { "首", "落とさねえ" }];
+        // Quotative って + explanatory んだ — don't merge adjective + って when followed by んだ
+        yield return ["悪いってんだ", new[] { "悪い", "って", "んだ" }];
+        yield return ["俺のどこが悪いってんだ", new[] { "俺", "の", "どこ", "が", "悪い", "って", "んだ" }];
+        yield return ["どうしろってんだ", new[] { "どう", "しろ", "って", "んだ" }];
+        // やつら should not be split into や + つら
+        yield return ["やつらの思うつぼだ", new[] { "やつら", "の", "思うつぼ", "だ" }];
+        yield return ["やつらに見つかるな", new[] { "やつら", "に", "見つかる", "な" }];
+        // Kana compound nouns — adjective stem + suffix/noun should recombine
+        yield return ["あのでかぶつを倒すぞ", new[] { "あの", "でかぶつ", "を", "倒す", "ぞ" }];
+        yield return ["あのながものは邪魔だ", new[] { "あの", "ながもの", "は", "邪魔", "だ" }];
+        yield return ["やすものを買った", new[] { "やすもの", "を", "買った" }];
+        // Compound verb ～ねば (negative conditional) — mixed kanji/hiragana dict form must resolve
+        yield return ["選びださねば", new[] { "選びださねば" }];
+        // Colloquial っしょ (contraction of でしょう) — split from preceding word
+        yield return ["さすがにサボりすぎっしょー", new[] { "さすが", "に", "サボりすぎ", "っしょ" }];
+        yield return ["マジっしょ", new[] { "マジ", "っしょ" }];
+        // いっしょ (一緒) must NOT be affected by っしょ splitting
+        yield return ["いっしょに遊ぼう", new[] { "いっしょに", "遊ぼう" }];
+        // Repeated verb phrases — CombineVerbDependant must not merge identical tokens
+        yield return ["ししてないしてない", new[] { "し", "してない", "してない" }];
+        // RepairOrphanedAuxiliary — Sudachi merges noun+verb into compound noun, orphaning the conjugation
+        yield return ["足蹴られた", new[] { "足", "蹴られた" }];  // 足蹴(noun) + られた(aux) → 足 + 蹴られた(passive past)
+        yield return ["肉食う", new[] { "肉", "食う" }];  // 肉食(noun) + う(filler) → 肉 + 食う(verb)
     }
 
     [Theory]
