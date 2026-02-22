@@ -6,7 +6,7 @@ namespace Jiten.Parser;
 
 public partial class MorphologicalAnalyser
 {
-    private bool CompoundExistsInLookup(string compoundForm, Func<string, List<DeconjugationForm>> cachedDeconjugate)
+    private bool CompoundExistsInLookup(string compoundForm, Func<string, IReadOnlyList<DeconjugationForm>> cachedDeconjugate)
     {
         if (HasCompoundLookup!(compoundForm))
             return true;
@@ -68,7 +68,8 @@ public partial class MorphologicalAnalyser
             if (nextWord.HasPartOfSpeechSection(PartOfSpeechSection.PossibleDependant) &&
                 currentWord.PartOfSpeech == PartOfSpeech.Verb && !currentWord.Text.EndsWith("たり") &&
                 nextWord.Text != currentWord.Text &&
-                nextWord.DictionaryForm is "得る" or "する" or "しまう" or "こなす" or "いく" or "貰う" or "いる" or "ない" or "だす")
+                (nextWord.DictionaryForm is "得る" or "しまう" or "こなす" or "いく" or "貰う" or "いる" or "ない" or "だす" ||
+                 (nextWord.DictionaryForm == "する" && (currentWord.Text.EndsWith("た") || currentWord.Text.EndsWith("だ")))))
             {
                 currentWord.Text += nextWord.Text;
             }
@@ -167,7 +168,7 @@ public partial class MorphologicalAnalyser
                     if (!isKnownSubsidiary)
                     {
                         var deconj = Deconjugator.Instance;
-                        string nextHiragana = KanaNormalizer.Normalize(WanaKana.ToHiragana(nextWord.Text));
+                        string nextHiragana = KanaNormalizer.Normalize(KanaConverter.ToHiragana(nextWord.Text));
                         var forms = deconj.Deconjugate(nextHiragana);
                         isKnownSubsidiary = forms.Any(f => TeFormSubsidiaryVerbs.Contains(f.Text));
                     }

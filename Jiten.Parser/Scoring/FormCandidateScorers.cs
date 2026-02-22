@@ -398,6 +398,23 @@ internal static class ReadingScorer
             {
                 readingMatchScore += 50;
             }
+            // Reverse prefix match — conjugated reading starts with an ichidan verb's kana stem.
+            // E.g., Sudachi reading "できません" starts with "でき" (stem of できる).
+            // Restricted to forms ending in る (ichidan verbs) to avoid false positives with godan verbs
+            // (e.g., かまう stem "かま" falsely matching "かまえ").
+            else if (sudachiHira.Length > 2
+                     && word.Forms
+                            .Where(f => f.FormType == JmDictFormType.KanaForm)
+                            .Any(f =>
+                            {
+                                var hiragana = KanaScoringHelpers.ToNormalizedHiragana(f.Text, convertLongVowelMark: false);
+                                if (hiragana.Length < 3 || !hiragana.EndsWith('る')) return false;
+                                var formStem = hiragana[..^1];
+                                return sudachiHira.StartsWith(formStem, StringComparison.Ordinal);
+                            }))
+            {
+                readingMatchScore += 50;
+            }
             // Stem fallback — for godan conjugated stems.
             else if (sudachiHira.Length > 1)
             {
@@ -426,13 +443,9 @@ internal static class ReadingScorer
 
 internal static class KanaScoringHelpers
 {
-    private static readonly DefaultOptions NoLongVowelConversion = new() { ConvertLongVowelMark = false };
-    private static readonly DefaultOptions LooseLongVowelConversion = new() { ConvertLongVowelMark = true };
-
     public static string ToNormalizedHiragana(string text, bool convertLongVowelMark)
     {
-        var options = convertLongVowelMark ? LooseLongVowelConversion : NoLongVowelConversion;
-        return KanaNormalizer.Normalize(WanaKana.ToHiragana(text, options));
+        return KanaNormalizer.Normalize(KanaConverter.ToHiragana(text, convertLongVowelMark));
     }
 
     public static bool IsPureKanaScriptDifference(string a, string b)

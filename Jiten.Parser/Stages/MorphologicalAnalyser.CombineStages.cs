@@ -14,8 +14,8 @@ public partial class MorphologicalAnalyser
         var result = new List<WordInfo>(wordInfos.Count);
 
         // Local memoization cache for deconjugation results within this pass
-        var deconjCache = new Dictionary<string, List<DeconjugationForm>>(StringComparer.Ordinal);
-        List<DeconjugationForm> CachedDeconjugate(string hiragana)
+        var deconjCache = new Dictionary<string, IReadOnlyList<DeconjugationForm>>(StringComparer.Ordinal);
+        IReadOnlyList<DeconjugationForm> CachedDeconjugate(string hiragana)
         {
             if (deconjCache.TryGetValue(hiragana, out var forms)) 
                 return forms;
@@ -120,12 +120,12 @@ public partial class MorphologicalAnalyser
                 if (!isValidPart && nextWord.Text is "そうだ" or "そうか")
                 {
                     string stealCandidate = currentWord.Text + "そう";
-                    string stealHiragana = KanaNormalizer.Normalize(WanaKana.ToHiragana(stealCandidate));
+                    string stealHiragana = KanaNormalizer.Normalize(KanaConverter.ToHiragana(stealCandidate));
                     var stealForms = CachedDeconjugate(stealHiragana);
 
                     string stealTarget = currentPOS == PartOfSpeech.Noun
-                        ? KanaNormalizer.Normalize(WanaKana.ToHiragana(currentDictForm)) + "する"
-                        : KanaNormalizer.Normalize(WanaKana.ToHiragana(currentDictForm));
+                        ? KanaNormalizer.Normalize(KanaConverter.ToHiragana(currentDictForm)) + "する"
+                        : KanaNormalizer.Normalize(KanaConverter.ToHiragana(currentDictForm));
 
                     if (stealForms.Any(f => f.Text == stealTarget))
                     {
@@ -156,7 +156,7 @@ public partial class MorphologicalAnalyser
                 if (!isValidPart) break;
 
                 string candidateText = currentWord.Text + nextWord.Text;
-                string candidateHiragana = KanaNormalizer.Normalize(WanaKana.ToHiragana(candidateText));
+                string candidateHiragana = KanaNormalizer.Normalize(KanaConverter.ToHiragana(candidateText));
                 var forms = CachedDeconjugate(candidateHiragana);
 
                 bool merged = false;
@@ -164,8 +164,8 @@ public partial class MorphologicalAnalyser
 
                 // Scenario A: Standard inflection - deconjugates to current target
                 string targetHiragana = currentPOS == PartOfSpeech.Noun
-                    ? KanaNormalizer.Normalize(WanaKana.ToHiragana(currentDictForm)) + "する"
-                    : KanaNormalizer.Normalize(WanaKana.ToHiragana(currentDictForm));
+                    ? KanaNormalizer.Normalize(KanaConverter.ToHiragana(currentDictForm)) + "する"
+                    : KanaNormalizer.Normalize(KanaConverter.ToHiragana(currentDictForm));
 
                 if (forms.Any(f => f.Text == targetHiragana))
                 {
@@ -203,7 +203,7 @@ public partial class MorphologicalAnalyser
                           (nextWord.PartOfSpeech == PartOfSpeech.Verb &&
                            nextWord.HasPartOfSpeechSection(PartOfSpeechSection.PossibleDependant))))
                 {
-                    var suffixDict = KanaNormalizer.Normalize(WanaKana.ToHiragana(nextWord.DictionaryForm));
+                    var suffixDict = KanaNormalizer.Normalize(KanaConverter.ToHiragana(nextWord.DictionaryForm));
                     var match = forms.FirstOrDefault(f => f.Text.EndsWith(suffixDict) && f.Text.Length > suffixDict.Length);
 
                     if (match != null && (HasCompoundLookup == null || CompoundExistsInLookup(match.Text, CachedDeconjugate)))

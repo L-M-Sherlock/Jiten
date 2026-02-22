@@ -29,6 +29,7 @@ public partial class MorphologicalAnalyser
         "いたす",
         "いただく",
         "頂く",
+        "する",
     ];
 
     private static readonly HashSet<string> TeFormSubsidiaryVerbs =

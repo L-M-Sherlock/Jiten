@@ -304,6 +304,9 @@ public class FormSelectionTests
         // 答え: noun "answer" (1449530, ichi1/nf04) vs verb 答える (1449540, news2/nf34) → noun wins
         yield return ["その答えは正しい", "答え", 1449530, (byte)0];
 
+        // お答えする: humble form — 答え (verb stem of 答える) + する, should resolve to 答える not いらえ (2852531)
+        yield return ["お答えする", "答え", 1449540, (byte)0];
+
         // 教え: noun "teaching" (1236890, ichi1/nf12) vs verb 教える (1236900, ichi1/nf38) → noun wins
         yield return ["先生の教えに従う", "教え", 1236890, (byte)0];
 
@@ -392,6 +395,15 @@ public class FormSelectionTests
         yield return ["だから彼女が聞けたのはそこから続くやりとりだ。", "聞けた", 1591110, (byte)0];
         yield return ["娘の私ひとりの話を聞けない人が国民の声を聞けると思えないけど", "聞けない", 1591110, (byte)0];
         yield return ["いい結果が聞けるといいわね", "聞ける", 1591110, (byte)0];
+
+        // 出来 as noun (でき, workmanship) should not be overridden by suru-verb 出来 (しゅったい)
+        yield return ["純粋に刀剣としての出来をくらべたら、立夏の剣の方がおそらく上だ。", "出来", 1340430, (byte)0];
+
+        // 出来ません should be 出来る (dekiru) not 出来 (しゅったい)
+        yield return ["これ丈けの簡単な動作でも、手早くやればなかなか観察出来ません。", "出来ません", 1340450, (byte)0];
+
+        // こと + って must not merge — こと stays as 事 (1313580), not verb stem of ことる (Kotor, place name)
+        yield return ["自分のことって自分では分からない", "こと", 1313580, (byte)2];
 
     }
 

@@ -141,7 +141,9 @@ public class MorphologicalAnalyserTests
         yield return ["をつかむため", new[] { "を", "つかむ", "ため" }];
         yield return ["ときが自分", new[] { "とき", "が", "自分" }];
         yield return ["もうこころ", new[] { "もう", "こころ" }];
-        yield return ["届けしたら", new[] { "届けしたら" }];
+        yield return ["届けしたら", new[] { "届け", "したら" }];
+        yield return ["お答えする", new[] { "お", "答え", "する" }];
+        yield return ["お答えしましょう", new[] { "お", "答え", "しましょう" }];
         yield return ["おまえら低いんだよ", new[] { "おまえら", "低い", "んだ", "よ" }];
         yield return ["すべてがかかっていると思いながら", new[] { "すべて", "が", "かかっている", "と", "思いながら" }];
         yield return ["がいないとこの", new[] { "が", "いない", "と", "この" }];
@@ -740,6 +742,8 @@ public class MorphologicalAnalyserTests
         // RepairOrphanedAuxiliary — Sudachi merges noun+verb into compound noun, orphaning the conjugation
         yield return ["足蹴られた", new[] { "足", "蹴られた" }];  // 足蹴(noun) + られた(aux) → 足 + 蹴られた(passive past)
         yield return ["肉食う", new[] { "肉", "食う" }];  // 肉食(noun) + う(filler) → 肉 + 食う(verb)
+        // こと + って must not merge — ことる (Kotor, place name) is not a verb
+        yield return ["自分のことって自分では分からない", new[] { "自分", "の", "こと", "って", "自分", "では", "分からない" }];
     }
 
     [Theory]

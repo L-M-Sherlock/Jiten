@@ -196,10 +196,10 @@ public partial class MorphologicalAnalyser
                 Text = text, DictionaryForm = text, NormalizedForm = text, Reading = text, PartOfSpeech = PartOfSpeech.Interjection
             };
 
-        static bool IsVerbPast(List<DeconjugationForm> forms) =>
+        static bool IsVerbPast(IReadOnlyList<DeconjugationForm> forms) =>
             forms.Any(f => f.Tags.Any(t => t.StartsWith("v", StringComparison.Ordinal)) && f.Process.Any(p => p == "past"));
 
-        static bool IsRuVerb(List<DeconjugationForm> forms, string expectedDictionaryHiragana) =>
+        static bool IsRuVerb(IReadOnlyList<DeconjugationForm> forms, string expectedDictionaryHiragana) =>
             forms.Any(f => f.Text == expectedDictionaryHiragana && f.Tags.Any(t => t is "v1" or "v5r"));
 
         for (int i = 0; i < wordInfos.Count; i++)
@@ -268,7 +268,7 @@ public partial class MorphologicalAnalyser
                     result[^1] = new WordInfo(prev)
                                  {
                                      Text = verbCandidate, DictionaryForm = verbCandidate, NormalizedForm = verbCandidate,
-                                     Reading = WanaKana.ToHiragana(prev.Reading + current.Text[..^1]), PartOfSpeech = PartOfSpeech.Verb
+                                     Reading = KanaConverter.ToHiragana(prev.Reading + current.Text[..^1]), PartOfSpeech = PartOfSpeech.Verb
                                  };
                     // Add the elongation う as a separate token
                     result.Add(MakeInterjection("う"));
@@ -288,7 +288,7 @@ public partial class MorphologicalAnalyser
 
                 if (isValidVerbPast)
                 {
-                    result[^1] = new WordInfo(prev) { Text = pastCandidate, Reading = WanaKana.ToHiragana(prev.Reading + "た"), PartOfSpeech = PartOfSpeech.Verb };
+                    result[^1] = new WordInfo(prev) { Text = pastCandidate, Reading = KanaConverter.ToHiragana(prev.Reading + "た"), PartOfSpeech = PartOfSpeech.Verb };
                     result.Add(MakeInterjection("あ"));
                     continue;
                 }
@@ -396,7 +396,7 @@ public partial class MorphologicalAnalyser
                 var candidateText = current.Text + split[i + 1].Text;
                 if (IsNdaVerbForm(deconj.Deconjugate(NormalizeToHiragana(candidateText))))
                 {
-                    var candidateReading = WanaKana.ToHiragana(current.Reading + split[i + 1].Reading);
+                    var candidateReading = KanaConverter.ToHiragana(current.Reading + split[i + 1].Reading);
                     result.Add(new WordInfo(current)
                     {
                         Text = candidateText, PartOfSpeech = PartOfSpeech.Verb,
@@ -443,7 +443,7 @@ public partial class MorphologicalAnalyser
                             HasCompoundLookup(NormalizeToHiragana(prev.Text) + ending))
                         {
                             var candidateText = prev.Text + "ん" + split[i + 1].Text;
-                            var candidateReading = WanaKana.ToHiragana(prev.Reading + "ん" + split[i + 1].Reading);
+                            var candidateReading = KanaConverter.ToHiragana(prev.Reading + "ん" + split[i + 1].Reading);
                             result.RemoveAt(result.Count - 1);
                             result.Add(new WordInfo(prev)
                             {
@@ -479,7 +479,7 @@ public partial class MorphologicalAnalyser
                             negativeWord.Text = candidateText;
                             negativeWord.DictionaryForm = verbStem.DictionaryForm;
                             negativeWord.NormalizedForm = candidateText;
-                            negativeWord.Reading = WanaKana.ToHiragana(verbStem.Reading + negativeWord.Reading);
+                            negativeWord.Reading = KanaConverter.ToHiragana(verbStem.Reading + negativeWord.Reading);
                         }
                     }
 
@@ -742,28 +742,6 @@ public partial class MorphologicalAnalyser
                     });
                     i += 2;
                     continue;
-                }
-
-                // Sudachi sometimes splits slang/informal godan ラ行 verbs as noun + って (particle)
-                // e.g., シコ(noun) + って(particle) should be シコって (te-form of シコる)
-                if (w1.PartOfSpeech == PartOfSpeech.Noun && w2.Text == "って" &&
-                    w2.PartOfSpeech == PartOfSpeech.Particle && HasCompoundLookup != null)
-                {
-                    var candidateVerb = w1.Text + "る";
-                    if (HasCompoundLookup(candidateVerb))
-                    {
-                        var newWord = new WordInfo(w1)
-                        {
-                            Text = w1.Text + w2.Text,
-                            DictionaryForm = candidateVerb,
-                            PartOfSpeech = PartOfSpeech.Verb,
-                            NormalizedForm = candidateVerb,
-                            Reading = w1.Reading + w2.Reading
-                        };
-                        newList.Add(newWord);
-                        i += 2;
-                        continue;
-                    }
                 }
 
                 bool found = false;

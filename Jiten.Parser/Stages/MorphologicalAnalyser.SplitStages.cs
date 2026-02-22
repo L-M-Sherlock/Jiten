@@ -69,7 +69,7 @@ public partial class MorphologicalAnalyser
             var mainVerb = new WordInfo
                            {
                                Text = mainVerbSurface, DictionaryForm = mainVerbDict, NormalizedForm = mainVerbDict,
-                               PartOfSpeech = PartOfSpeech.Verb, Reading = WanaKana.ToHiragana(mainVerbSurface)
+                               PartOfSpeech = PartOfSpeech.Verb, Reading = KanaConverter.ToHiragana(mainVerbSurface)
                            };
 
             // Create the auxiliary verb token
@@ -77,7 +77,7 @@ public partial class MorphologicalAnalyser
                           {
                               Text = auxVerbSurface, DictionaryForm = matchedAux, NormalizedForm = matchedAux,
                               PartOfSpeech = PartOfSpeech.Verb, PartOfSpeechSection1 = PartOfSpeechSection.PossibleDependant,
-                              Reading = WanaKana.ToHiragana(auxVerbSurface)
+                              Reading = KanaConverter.ToHiragana(auxVerbSurface)
                           };
 
             result.Add(mainVerb);
