@@ -19,13 +19,17 @@ public static class ExampleSentenceExtractor
 
     public static List<ExampleSentence> ExtractSentences(List<SentenceInfo> sentences, DeckWord[] words)
     {
+        static bool IsPosMatch(DeckWord deckWord, WordInfo token)
+        {
+            return deckWord.SudachiPartOfSpeech == token.PartOfSpeech ||
+                   deckWord.PartsOfSpeech.Any(pos => pos == token.PartOfSpeech);
+        }
+
         static bool IsPosCompatible(DeckWord deckWord, WordInfo token)
         {
-            if (deckWord.PartsOfSpeech.Any(pos => pos == token.PartOfSpeech))
+            if (IsPosMatch(deckWord, token))
                 return true;
 
-            // Sudachi emits proper nouns as POS=名詞 (Noun) with name-like POS sections.
-            // Allow those to match JMnedict name entries (PartOfSpeech.Name).
             if (PosMapper.IsNameLikeSudachiNoun(
                     token.PartOfSpeech,
                     token.PartOfSpeechSection1,
@@ -85,7 +89,8 @@ public static class ExampleSentenceExtractor
                                                {
                                                    WordId = word.WordId, ReadingIndex = word.ReadingIndex,
                                                    OriginalText = word.OriginalText, PartsOfSpeech = word.PartsOfSpeech,
-                                                   SudachiReading = word.SudachiReading
+                                                   SudachiReading = word.SudachiReading,
+                                                   SudachiPartOfSpeech = word.SudachiPartOfSpeech
                                                });
         }
 
@@ -157,7 +162,7 @@ public static class ExampleSentenceExtractor
                     int posMatchNoReading = -1;
                     for (int j = 0; j < wordList.Count; j++)
                     {
-                        if (wordList[j].PartsOfSpeech.Any(pos => pos == wordInfo.PartOfSpeech))
+                        if (IsPosMatch(wordList[j], wordInfo))
                         {
                             if (!string.IsNullOrEmpty(wordInfo.Reading) &&
                                 !string.IsNullOrEmpty(wordList[j].SudachiReading) &&

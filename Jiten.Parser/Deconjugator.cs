@@ -428,7 +428,7 @@ public class Deconjugator
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static bool V1InfTrapCheck(DeconjugationForm form)
     {
-        return !(form.Tags.Count == 1 && form.Tags[0] == "stem-ren");
+        return !(form.Tags is ["stem-ren"]);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

@@ -744,6 +744,12 @@ public class MorphologicalAnalyserTests
         yield return ["肉食う", new[] { "肉", "食う" }];  // 肉食(noun) + う(filler) → 肉 + 食う(verb)
         // こと + って must not merge — ことる (Kotor, place name) is not a verb
         yield return ["自分のことって自分では分からない", new[] { "自分", "の", "こと", "って", "自分", "では", "分からない" }];
+
+        // となり with trailing comma — Sudachi splits と+なり before comma; CombineToNaru should re-merge
+        yield return ["体験はトラウマとなり、大変だった", new[] { "体験", "は", "トラウマ", "となり", "大変", "だった" }];
+
+        // ごめんなさいね — Sudachi fuses interjection+particle; repair stage should split
+        yield return ["ごめんなさいね？", new[] { "ごめんなさい", "ね" }];
     }
 
     [Theory]

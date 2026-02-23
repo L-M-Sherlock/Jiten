@@ -14,6 +14,7 @@ public class ParserDiagnostics
     public SudachiDiagnostics? Sudachi { get; set; }
     public List<TokenProcessingStage> TokenStages { get; set; } = [];
     public List<WordResult> Results { get; set; } = [];
+    public List<AdjacentScoringEntry> AdjacentScoring { get; set; } = [];
     public ParserRunSummary RunSummary { get; set; } = new();
 }
 
@@ -24,41 +25,15 @@ public class ParserRunSummary
 {
     private int _processSemaphoreTimeoutCount;
     private int _unresolvedTokenCount;
-    private int _rescueInvocationCount;
-    private int _rescueCandidateCount;
-    private int _rescueRecoveredCount;
-    private int _rescueUnresolvedCount;
 
     public int ProcessSemaphoreTimeoutCount => _processSemaphoreTimeoutCount;
     public int UnresolvedTokenCount => _unresolvedTokenCount;
-    public int RescueInvocationCount => _rescueInvocationCount;
-    public int RescueCandidateCount => _rescueCandidateCount;
-    public int RescueRecoveredCount => _rescueRecoveredCount;
-    public int RescueUnresolvedCount => _rescueUnresolvedCount;
 
     public void IncrementProcessSemaphoreTimeoutCount() =>
         Interlocked.Increment(ref _processSemaphoreTimeoutCount);
 
     public void IncrementUnresolvedTokenCount() =>
         Interlocked.Increment(ref _unresolvedTokenCount);
-
-    public void AddRescueInvocations(int count)
-    {
-        if (count > 0)
-            Interlocked.Add(ref _rescueInvocationCount, count);
-    }
-
-    public void AddRescueCandidates(int count)
-    {
-        if (count > 0)
-            Interlocked.Add(ref _rescueCandidateCount, count);
-    }
-
-    public void IncrementRescueRecoveredCount() =>
-        Interlocked.Increment(ref _rescueRecoveredCount);
-
-    public void IncrementRescueUnresolvedCount() =>
-        Interlocked.Increment(ref _rescueUnresolvedCount);
 }
 
 /// <summary>
@@ -192,4 +167,33 @@ public class FormTestFailure
     public int? ActualWordId { get; set; }
     public byte? ActualReadingIndex { get; set; }
     public string Reason { get; set; } = string.Empty;
+}
+
+public class AdjacentScoringEntry
+{
+    public int Position { get; set; }
+    public string Surface { get; set; } = string.Empty;
+    public AdjacentTokenInfo? LeftContext { get; set; }
+    public AdjacentTokenInfo? RightContext { get; set; }
+    public List<string> RulesMatched { get; set; } = [];
+    public AdjacentCandidateInfo? FirstPassWinner { get; set; }
+    public AdjacentCandidateInfo? AdjustedWinner { get; set; }
+    public bool Changed { get; set; }
+}
+
+public class AdjacentTokenInfo
+{
+    public string Text { get; set; } = string.Empty;
+
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public PartOfSpeech Pos { get; set; }
+}
+
+public class AdjacentCandidateInfo
+{
+    public int WordId { get; set; }
+    public byte ReadingIndex { get; set; }
+    public int Score { get; set; }
+    public int ContextBonus { get; set; }
+    public int AdjustedScore { get; set; }
 }

@@ -12,6 +12,25 @@ public class DeconjugatorTests
     [InlineData("作る", "作る")]
     [InlineData("なかった", "ない")]
     [InlineData("選びださねば", "選びだす")]
+    // Colloquial contractions: てしまう → ちゃう/ちまう/じゃう/じまう
+    [InlineData("食べちゃった", "食べる")]
+    [InlineData("飲んじゃった", "飲む")]
+    [InlineData("食べちまった", "食べる")]
+    [InlineData("飲んじまった", "飲む")]
+    // Colloquial contractions: ていく → てく, ておく → とく
+    [InlineData("食べてく", "食べる")]
+    [InlineData("なってく", "なる")]
+    [InlineData("飲んでく", "飲む")]
+    [InlineData("食べとく", "食べる")]
+    [InlineData("飲んどく", "飲む")]
+    // Colloquial contractions: conditional けりゃ/きゃ, ては → ちゃ, では → じゃ
+    [InlineData("食べなくちゃ", "食べる")]
+    [InlineData("食べなけりゃ", "食べる")]
+    [InlineData("行かなきゃ", "行く")]
+    // Colloquial contractions: slang negative んない, adjective ねえ/ねぇ
+    [InlineData("わかんない", "わかる")]
+    [InlineData("つまんない", "つまる")]
+    [InlineData("すごくねえ", "すごい")]
     public void Deconjugation_ShouldContainExpectedDictionaryForm(string text, string expectedBase)
     {
         var deconjugator = new Deconjugator();

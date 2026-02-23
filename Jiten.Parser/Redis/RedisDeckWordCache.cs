@@ -10,7 +10,7 @@ public class RedisDeckWordCache : IDeckWordCache
 {
     private readonly IDatabase _redisDb;
     private static readonly MessagePackSerializerOptions MsgPackOptions =
-        ContractlessStandardResolverAllowPrivate.Options;
+        ContractlessStandardResolver.Options;
 
     public RedisDeckWordCache(IConfiguration configuration)
     {

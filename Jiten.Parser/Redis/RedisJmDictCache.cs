@@ -12,7 +12,7 @@ public class RedisJmDictCache : IJmDictCache
 {
     private readonly IDatabase _redisDb;
     private static readonly MessagePackSerializerOptions MsgPackOptions =
-        ContractlessStandardResolverAllowPrivate.Options;
+        ContractlessStandardResolver.Options;
     private readonly TimeSpan _cacheExpiry = TimeSpan.FromDays(30);
     private const string InitializedKey = "jmdict:initialized";
     private readonly IDbContextFactory<JitenDbContext> _contextFactory;
@@ -155,7 +155,7 @@ public class RedisJmDictCache : IJmDictCache
             if (word != null)
             {
                 ComputeArchaicFlag(word);
-                word.Definitions = [];
+                StripDefinitionMeanings(word);
                 var bytes = MessagePackSerializer.Serialize(word, MsgPackOptions);
                 await _redisDb.StringSetAsync(redisKey, bytes, expiry: _cacheExpiry);
             }
@@ -249,7 +249,7 @@ public class RedisJmDictCache : IJmDictCache
                                 foreach (var word in dbWords)
                                 {
                                     ComputeArchaicFlag(word);
-                                    word.Definitions = [];
+                                    StripDefinitionMeanings(word);
                                     results[word.WordId] = word;
                                     var redisKey = BuildWordKey(word.WordId);
                                     var bytes = MessagePackSerializer.Serialize(word, MsgPackOptions);
@@ -315,7 +315,7 @@ public class RedisJmDictCache : IJmDictCache
         foreach (var (wordId, word) in words)
         {
             ComputeArchaicFlag(word);
-            word.Definitions = [];
+            StripDefinitionMeanings(word);
             var redisKey = BuildWordKey(wordId);
             var bytes = MessagePackSerializer.Serialize(word, MsgPackOptions);
             tasks.Add(batch.StringSetAsync(redisKey, bytes, expiry: _cacheExpiry));
@@ -325,6 +325,24 @@ public class RedisJmDictCache : IJmDictCache
         await Task.WhenAll(tasks);
 
         return tasks.All(t => t.Result);
+    }
+
+    private static void StripDefinitionMeanings(JmDictWord word)
+    {
+        foreach (var def in word.Definitions)
+        {
+            def.EnglishMeanings.Clear();
+            def.DutchMeanings.Clear();
+            def.FrenchMeanings.Clear();
+            def.GermanMeanings.Clear();
+            def.SpanishMeanings.Clear();
+            def.HungarianMeanings.Clear();
+            def.RussianMeanings.Clear();
+            def.SlovenianMeanings.Clear();
+            def.Pos.Clear();
+            def.Field.Clear();
+            def.Dial.Clear();
+        }
     }
 
     private static void ComputeArchaicFlag(JmDictWord word)

@@ -20,6 +20,27 @@ public partial class MorphologicalAnalyser
         return false;
     }
 
+    private static readonly HashSet<char> DictionaryVerbEndings =
+        ['う', 'く', 'ぐ', 'す', 'つ', 'ぬ', 'ぶ', 'む', 'る'];
+
+    private bool VerbDictFormExistsInLookup(string dictForm, string? normalizedForm, Func<string, IReadOnlyList<DeconjugationForm>> cachedDeconjugate)
+    {
+        if (HasCompoundLookup!(dictForm))
+            return true;
+
+        if (normalizedForm != null && normalizedForm != dictForm && HasCompoundLookup(normalizedForm))
+            return true;
+
+        foreach (var form in cachedDeconjugate(dictForm))
+        {
+            if (form.Text.Length > 0 && DictionaryVerbEndings.Contains(form.Text[^1]) &&
+                HasCompoundLookup(form.Text))
+                return true;
+        }
+
+        return false;
+    }
+
     private List<WordInfo> CombineVerbDependants(List<WordInfo> wordInfos)
     {
         if (wordInfos.Count < 2)
