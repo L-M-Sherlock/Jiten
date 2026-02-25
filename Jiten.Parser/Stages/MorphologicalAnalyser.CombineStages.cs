@@ -318,7 +318,8 @@ public partial class MorphologicalAnalyser
                     if (!string.IsNullOrEmpty(nextWord.Reading))
                     {
                         var readingHira = KanaConverter.ToHiragana(nextWord.Reading);
-                        if (readingHira != nextWord.Text && readingHira != combinedText)
+                        if (readingHira != nextWord.Text && readingHira != combinedText
+                            && !HasCompoundLookup(nextWord.Text))
                         {
                             var readingCombined = currentWord.Text + readingHira;
                             if (!PrefixCombineExclusions.Contains(readingCombined) && HasCompoundLookup(readingCombined))
