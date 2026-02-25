@@ -1011,6 +1011,12 @@ public partial class MorphologicalAnalyser
                 continue;
             }
 
+            if (HasCompoundLookup != null && HasCompoundLookup(word.Text))
+            {
+                result.Add(word);
+                continue;
+            }
+
             bool split = false;
             foreach (var particle in SentenceFinalParticles.OrderByDescending(p => p.Length))
             {

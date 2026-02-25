@@ -68,6 +68,11 @@ public class FormSelectionTests
         // Sudachi returns ウル but archaic POS penalty counteracts the ReadingMatchScore
         yield return ["得る", "得る", 1588760, (byte)0];
 
+        // Classical archaic gating: べし is a classical marker that sets IsArchaicSentence=true.
+        // Archaic penalty drops from -350 → -50, letting Sudachi's ウル reading tip the balance
+        // toward the v2a-s archaic form うる (1454500) over the modern v1 form える (1588760).
+        yield return ["得るべし", "得る", 1454500, (byte)0];
+
         // 身体 in isolation: Sudachi gives reading シンタイ, so しんたい (2830705) wins via ReadingMatchScore.
         // In sentence context where Sudachi gives カラダ, からだ (1409140) wins via EntryPriorityScore.
         yield return ["身体", "身体", 2830705, (byte)0];
@@ -343,6 +348,13 @@ public class FormSelectionTests
         yield return ["早くどうかしないと飛んでもねえ事になるぜ", "飛んで", 1429700, (byte)0];
         yield return ["無事飛んで戻ってきたら", "飛んで", 1429700, (byte)0];
 
+        // まぁいい → adj-ix いい (2820690), not taru-adj 易々 (2672320) or Iran-Iraq abbr (1923080)
+        // Sudachi misidentifies いい as verb いう (dictForm=いう); adj-ix exemption prevents the
+        // conjugated-identity penalty from firing on the correct word
+        yield return ["まぁいい、タイムトラベルの真相には一歩近づいたんだ。", "いい", 2820690, (byte)0];
+        yield return ["まぁいいか", "いい", 2820690, (byte)0];
+        yield return ["いい", "いい", 2820690, (byte)0];
+
         // くさい should resolve to 臭い (1333150, adj-i), not 救済 (2673180, noun) or くさる (1497800, verb)
         yield return ["くさい", "くさい", 1333150, (byte)1];
         yield return ["とてもくさい", "くさい", 1333150, (byte)1];
@@ -402,6 +414,12 @@ public class FormSelectionTests
         // 出来ません should be 出来る (dekiru) not 出来 (しゅったい)
         yield return ["これ丈けの簡単な動作でも、手早くやればなかなか観察出来ません。", "出来ません", 1340450, (byte)0];
 
+        // 出来なさそう should be 出来る (dekiru, 1340450) — verb + negative-appearance suffix
+        yield return ["そんな量出来なさそうだけど", "出来なさそう", 1340450, (byte)0];
+
+        // 食べなさそう should be 食べる (taberu, 1358280)
+        yield return ["あいつ野菜食べなさそうだよな", "食べなさそう", 1358280, (byte)0];
+
         // こと + って must not merge — こと stays as 事 (1313580), not verb stem of ことる (Kotor, place name)
         yield return ["自分のことって自分では分からない", "こと", 1313580, (byte)2];
 
@@ -428,8 +446,51 @@ public class FormSelectionTests
         // Unclass name wins via direct surface lookup in rescue path
         yield return ["超余裕ブチこいてるのは確かねあの女", "こいてる", 2019450, (byte)1];
 
-    }
+        // にらんでいる → 睨む/to glare (1569880), not 似る/to resemble (1314600)
+        // 似る has "jiten" priority (+100 WordScore) but is v1; the deconjugation chain ending in v5m
+        // correctly gates it out. The erroneous path went teiru→adj-i te-form→slurred negative→a-stem,
+        // exploiting the intermediate v1 con_tag to pass the POS validation for the v1 word 似る.
+        // Fix: validate only the last deconjugation tag (v5m), not all accumulated intermediate tags.
+        yield return ["にらんでいる", "にらんでいる", 1569880, (byte)1];
 
+        // 似ている → 似る/to resemble (1314600, v1) — regression guard: v1 verbs must still match
+        // via the correct teiru→stem-te-verbal→stem-ren-less→v1 chain after the POS fix
+        yield return ["似ている", "似ている", 1314600, (byte)0];
+
+        // 飲んでいる → 飲む/to drink (1169870, v5m) — v5m+teiru pattern same as にらむ
+        yield return ["飲んでいる", "飲んでいる", 1169870, (byte)0];
+
+        // 絡んでいる → 絡む/to get entangled (1548520, v5m) — v5m+teiru pattern
+        yield return ["絡んでいる", "絡んでいる", 1548520, (byte)0];
+
+        // このにんむは → 任務/duty (1467260, n), not 似る/to resemble (1314600, v1)
+        // Sudachi splits にんむ as にん (verb, dict=にる) + む (aux), CombineAuxiliary merges them back,
+        // but the inherited DictionaryForm=にる gave the verb a false +100 LemmaScorer boost.
+        // Fix: user dict entry at cost 3000 makes Sudachi output にんむ as a single noun (dict=にんむ),
+        // removing the verb boost; む also excluded from CombineAuxiliary as a safeguard.
+        yield return ["このにんむは、里長とヒノエさんから、コミツにあたえられたんだよ。", "にんむ", 1467260, (byte)1];
+
+        yield return ["そんな心地", "そんな", 1007130, (byte)0];
+        yield return ["ごめんなさいね？", "ね", 2029080, (byte)0];
+        yield return ["どうして、こんな状況になっているんだろう。", "こんな", 1004880, (byte)0];
+
+        // 無き should match the adj-pn lexical entry (2138570), not deconjugate to 無い (1529520)
+        yield return ["余す所無き実力", "無き", 2138570, (byte)0];
+
+        // 事 after なすべき expression → こと nominalizer (1313580), not じ suffix (2187200)
+        // Sudachi tags 事 as 接尾辞/ジ; ReclassifyOrphanedSuffixes reclassifies it, then
+        // FixReadingAmbiguity overrides ジ→コト so ReadingMatchScore goes to the correct entry
+        yield return ["どうやらこの男は俺と違って、自分のなすべき事を理解しているようだった。", "事", 1313580, (byte)0];
+
+        yield return ["一人でシコってくれた。", "シコってくれた", 2595020, (byte)0];
+        yield return [" 「……あんたはさ、考え方が古くせーんだよ」", "古くせー", 1265530, (byte)1];
+
+        // お肉 → 肉/meat (1463520), not northern groundcone おにく (2716820)
+        // CombinePrefixes reading-based path matched おにく because にく is 肉's reading;
+        // おにく exclusion prevents the spurious merge so 肉 resolves correctly
+        yield return ["お、お肉は余計な脂肪が付きやすいのよ。", "肉", 1463520, (byte)0];
+    }
+    
     [Theory]
     [MemberData(nameof(FormSelectionCases))]
     public async Task FormSelectionTest(string input, string expectedOriginalText, int expectedWordId, byte expectedReadingIndex)

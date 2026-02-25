@@ -1,6 +1,7 @@
 using System.Text.Json.Serialization;
 using System.Threading;
 using Jiten.Core.Data;
+using Jiten.Parser.Grammar;
 
 namespace Jiten.Parser.Diagnostics;
 
@@ -16,7 +17,31 @@ public class ParserDiagnostics
     public List<WordResult> Results { get; set; } = [];
     public List<AdjacentScoringEntry> AdjacentScoring { get; set; } = [];
     public ParserRunSummary RunSummary { get; set; } = new();
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<TransitionViolationEntry>? TransitionViolations { get; private set; }
+
+    internal void LogTransitionViolation(string ruleId, in TokenWindow window)
+    {
+        TransitionViolations ??= [];
+        TransitionViolations.Add(new TransitionViolationEntry(
+            ruleId,
+            window.Current.Text,
+            window.Current.PartOfSpeech,
+            window.Prev?.PartOfSpeech));
+    }
+
+    public IEnumerable<WordResult> GetLowConfidenceResults(int threshold = 15) =>
+        Results.Where(r => r is not null && r.MarginToSecond.HasValue && r.MarginToSecond.Value < threshold);
 }
+
+public sealed record TransitionViolationEntry(
+    string RuleId,
+    string TokenText,
+    [property: JsonConverter(typeof(JsonStringEnumConverter))]
+    PartOfSpeech TokenPos,
+    [property: JsonConverter(typeof(JsonStringEnumConverter))]
+    PartOfSpeech? PrevPos);
 
 /// <summary>
 /// Lightweight counters for parse-run-level health and fallback behavior.
@@ -98,6 +123,16 @@ public class WordResult
     public int? WordId { get; set; }
     public byte? ReadingIndex { get; set; }
     public List<FormCandidateDiagnostic> Candidates { get; set; } = [];
+    public int? MarginToSecond { get; set; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ConfidenceLevel => MarginToSecond switch
+    {
+        null    => "single",
+        >= 40   => "high",
+        >= 15   => "medium",
+        _       => "low"
+    };
 }
 
 public class FormCandidateDiagnostic

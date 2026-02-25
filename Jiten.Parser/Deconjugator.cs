@@ -422,7 +422,19 @@ public class Deconjugator
         if (rule.ContextRule == "saspecial" && !SaSpecialCheck(form, rule))
             return null;
 
+        if (rule.ContextRule == "temirurule" && !TemiruCheck(form, rule))
+            return null;
+
         return StdRuleDeconjugate(form, rule);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static bool TemiruCheck(DeconjugationForm form, DeconjugationRule rule)
+    {
+        var conEnd = rule.ConEnd[0];
+        if (!form.Text.EndsWith(conEnd, StringComparison.Ordinal)) return false;
+        var prefix = form.Text.AsSpan(0, form.Text.Length - conEnd.Length);
+        return prefix.EndsWith("て") || prefix.EndsWith("で");
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

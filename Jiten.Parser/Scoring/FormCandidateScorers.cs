@@ -11,7 +11,7 @@ internal static class FormCandidateScorer
         FormScoringContext context,
         IReadOnlySet<string> archaicPosTypes)
     {
-        int wordScore = WordPriorityScorer.Score(candidate, context.IsNameContext, archaicPosTypes);
+        int wordScore = WordPriorityScorer.Score(candidate, context.IsNameContext, context.IsArchaicSentence, archaicPosTypes, context.IsSentenceInitial);
         int entryPriorityScore = EntryPriorityScorer.Score(candidate);
         int formPriorityScore = FormPriorityScorer.Score(candidate, context.IsKanaSurface);
         int formFlagScore = FormFlagScorer.Score(candidate, context);
@@ -42,7 +42,7 @@ internal static class FormCandidateScorer
 
 internal static class WordPriorityScorer
 {
-    public static int Score(FormCandidate candidate, bool isNameContext, IReadOnlySet<string> archaicPosTypes)
+    public static int Score(FormCandidate candidate, bool isNameContext, bool isArchaicSentence, IReadOnlySet<string> archaicPosTypes, bool isSentenceInitial = false)
     {
         var word = candidate.Word;
         int wordScore = 0;
@@ -59,7 +59,7 @@ internal static class WordPriorityScorer
                                                                p is "ichi1" or "ichi2" or "news1" or "news2" or "jiten" ||
                                                                p.StartsWith("nf")) == true;
             if (!hasFrequencyMarker)
-                wordScore -= 350;
+                wordScore -= isArchaicSentence ? 50 : 350;
         }
 
         // Only penalise when the word has NO non-archaic primary POS.
@@ -79,9 +79,13 @@ internal static class WordPriorityScorer
                                      or "adv" or "adv-to" or "cop" or "aux" or "aux-v" or "aux-adj"
                                      or "prt" or "int" or "exp" or "pref" or "ctr"
                                      or "on-mim" or "pn" or "conj"))
-            wordScore -= 75;
+            wordScore -= isArchaicSentence ? 15 : 75;
 
         if (word.PartsOfSpeech.Any(p => p is "on-mim"))
+            wordScore += 10;
+
+        // Adverbs commonly start clauses; mild boost when sentence-initial.
+        if (isSentenceInitial && word.PartsOfSpeech.Any(p => p is "adv" or "adv-to"))
             wordScore += 10;
 
         // Unclass entries (JMnedict names with no category) are last-resort matches.
@@ -204,6 +208,15 @@ internal static class FormFlagScorer
         bool isPureKanaWord = word.Forms.All(f => f.FormType != JmDictFormType.KanjiForm);
         if (isPureKanaWord && form.FormType == JmDictFormType.KanaForm && context.IsKanaSurface)
             formFlagScore += 20;
+
+        // High-frequency kanji words (jiten priority) should not beat grammatical words
+        // via a single-char kana match. Single-char kana tokens are virtually always
+        // grammatical (copula/aux/particle); jiten content words like 打(だ) compete
+        // unfairly through their kana reading and must be suppressed.
+        if (!isPureKanaWord && form.FormType == JmDictFormType.KanaForm
+            && context.IsKanaSurface && context.Surface.Length == 1
+            && word.Priorities?.Contains("jiten") == true)
+            formFlagScore -= 100;
 
         return formFlagScore;
     }
@@ -335,6 +348,21 @@ internal static class PenaltyScorer
                 bool isExpression = posToCheck.Any(p => p is "exp" or "on-mim");
                 if (isExpression) return false;
 
+                // Particles are function words whose surface form IS their canonical form.
+                // Sudachi may give DictionaryForm=だ for で (etymological), but で the particle
+                // is not a conjugation — don't penalise it.
+                bool isParticle = posToCheck.Any(p => p is "prt");
+                if (isParticle) return false;
+
+                // adj-pn/adj-t are standalone prenominal adjectives (e.g. 亡き, 無き, 堂々たる).
+                // Their surface IS their dictionary form; Sudachi may give a different DictionaryForm
+                // (the archaic base), but only skip the penalty when that DictForm IS one of this
+                // word's own forms. If DictForm points to a completely different word
+                // (e.g. させる→する), fall through to the nounHasDictForm check below.
+                bool isAdnominal = posToCheck.Any(p => p is "adj-pn" or "adj-t");
+                if (isAdnominal && candidate.Word.Forms.Any(f => f.Text == context.DictionaryForm))
+                    return false;
+
                 // For non-inflectable words (e.g., plain nouns), still apply the penalty when Sudachi's
                 // DictionaryForm doesn't appear in this word's forms — it points to a different (inflectable) word.
                 // E.g., surface=答え, DictForm=答える: noun 答え shouldn't beat verb 答える via surface match.
@@ -346,6 +374,11 @@ internal static class PenaltyScorer
                 }
                 return false;
             }
+
+            // adj-ix (e.g. いい/よい) has irregular conjugations; its base forms are not conjugated
+            // forms of other words, even if Sudachi misidentifies them (e.g. いい as verb いう).
+            if (posToCheck.Any(p => p is "adj-ix"))
+                return false;
 
             surfaceMatchScore -= 200;
             return true;
