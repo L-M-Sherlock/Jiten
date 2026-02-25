@@ -31,6 +31,10 @@ public class DeconjugatorTests
     [InlineData("わかんない", "わかる")]
     [InlineData("つまんない", "つまる")]
     [InlineData("すごくねえ", "すごい")]
+    // Na-adjective adnominal form (な is attributive, not casual request)
+    [InlineData("和やかな", "和やか")]
+    [InlineData("大切な", "大切")]
+    [InlineData("静かな", "静か")]
     public void Deconjugation_ShouldContainExpectedDictionaryForm(string text, string expectedBase)
     {
         var deconjugator = new Deconjugator();

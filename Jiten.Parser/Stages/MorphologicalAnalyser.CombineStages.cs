@@ -152,6 +152,35 @@ public partial class MorphologicalAnalyser
                     }
                 }
 
+                // Handle なさそう: negative-appearance suffix (e.g., 食べなさそう = seems like one can't eat)
+                // なさそう is tagged NaAdjective by Sudachi so doesn't pass isValidPart, but it attaches to
+                // the negative stem (mizenkei) which is the same as the masu-stem for ichidan verbs
+                if (!isValidPart && nextWord is { DictionaryForm: "なさそう" })
+                {
+                    string stealCandidate = currentWord.Text + nextWord.Text;
+                    string stealHiragana = KanaNormalizer.Normalize(KanaConverter.ToHiragana(stealCandidate));
+                    var stealForms = CachedDeconjugate(stealHiragana);
+
+                    string stealTarget = currentPOS == PartOfSpeech.Noun
+                        ? KanaNormalizer.Normalize(KanaConverter.ToHiragana(currentDictForm)) + "する"
+                        : KanaNormalizer.Normalize(KanaConverter.ToHiragana(currentDictForm));
+
+                    if (stealForms.Any(f => f.Text == stealTarget))
+                    {
+                        currentWord.Text = stealCandidate;
+                        if (currentPOS == PartOfSpeech.Noun)
+                        {
+                            currentWord.DictionaryForm = currentDictForm + "する";
+                            currentPOS = PartOfSpeech.Verb;
+                        }
+
+                        currentWord.PartOfSpeech = currentPOS;
+                        currentDictForm = currentWord.DictionaryForm;
+                        i++;
+                        break;
+                    }
+                }
+
                 if (!isValidPart) break;
 
                 string candidateText = currentWord.Text + nextWord.Text;
@@ -236,7 +265,7 @@ public partial class MorphologicalAnalyser
         return result;
     }
 
-    private static readonly HashSet<string> PrefixCombineExclusions = ["おつもり", "おいま"];
+    private static readonly HashSet<string> PrefixCombineExclusions = ["おつもり", "おいま", "おにく"];
 
     private static bool IsKanjiPrefix(string text)
     {
@@ -282,6 +311,27 @@ public partial class MorphologicalAnalyser
                         newList.Add(currentWord);
                         i += 2;
                         continue;
+                    }
+
+                    // Reading-based compound: Sudachi's reading may differ from the surface for
+                    // colloquial/contracted forms (e.g., 古 + くせー reading=クサイ → 古くさい).
+                    if (!string.IsNullOrEmpty(nextWord.Reading))
+                    {
+                        var readingHira = KanaConverter.ToHiragana(nextWord.Reading);
+                        if (readingHira != nextWord.Text && readingHira != combinedText)
+                        {
+                            var readingCombined = currentWord.Text + readingHira;
+                            if (!PrefixCombineExclusions.Contains(readingCombined) && HasCompoundLookup(readingCombined))
+                            {
+                                currentWord = new WordInfo(nextWord);
+                                currentWord.Text = combinedText;
+                                currentWord.DictionaryForm = readingCombined;
+                                currentWord.NormalizedForm = readingCombined;
+                                newList.Add(currentWord);
+                                i += 2;
+                                continue;
+                            }
+                        }
                     }
 
                     // Try partial combination: prefix + beginning of next token
@@ -511,6 +561,7 @@ public partial class MorphologicalAnalyser
                 && currentWord.Text != "なら"
                 && currentWord.Text != "なる"
                 && currentWord.DictionaryForm != "べし"
+                && currentWord.DictionaryForm != "む"
                 && currentWord.DictionaryForm is not "ごとし" and not "如し"
                 && currentWord.DictionaryForm != "ようだ"
                 && currentWord.DictionaryForm != "やがる"
@@ -783,7 +834,7 @@ public partial class MorphologicalAnalyser
                                      && (next.DictionaryForm is "なる" or "成る"
                                          || next.NormalizedForm is "なる" or "成る");
 
-                if (nextIsNaruForm)
+                if (nextIsNaruForm && next.Text.Length <= 3)
                 {
                     // Only merge when preceded by a noun/pronoun/counter/numeral (トラウマ/名詞 etc.)
                     // to avoid merging grammatical patterns like verb + と + なる (〜するとなる)

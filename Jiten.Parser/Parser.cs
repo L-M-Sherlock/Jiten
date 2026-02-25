@@ -6,6 +6,9 @@ using Jiten.Core.Data.JMDict;
 using Jiten.Core.Utils;
 using Jiten.Parser.Data.Redis;
 using Jiten.Parser.Diagnostics;
+using Jiten.Parser.Grammar;
+using Jiten.Parser.Resegmentation;
+using Jiten.Parser.Resolution;
 using Jiten.Parser.Runtime;
 using Jiten.Parser.Scoring;
 using Microsoft.EntityFrameworkCore;
@@ -24,6 +27,7 @@ namespace Jiten.Parser
 
         private static IDbContextFactory<JitenDbContext> _contextFactory = null!;
         private static Dictionary<string, List<int>> _lookups = null!;
+        private static Dictionary<int, int> _wordFrequencyRanks = null!;
         private static HashSet<int> _nameOnlyWordIds = null!;
 
         // Cache for compound expression lookups with bounded eviction
@@ -55,28 +59,31 @@ namespace Jiten.Parser
             (1291070, 1), (1587980, 1), (1443970, 5), (2029660, 0), (1177490, 5), (2029000, 1),
             (1244950, 1), (1243940, 1), (2747970, 1), (2029680, 0), (1193570, 6), (1796500, 2),
             (1811220, 1), (2654270, 0), (2269410, 1), (2439040, 3), (2861095, 0), (2836250, 0),
-            (1595910, 4), (2577750, 0), (1365520, 1), (1310720, 1), (1528180,1), (2866457,1),
-            (2394370,4), (1203250,2), (1537250,2), (2783750,1), (2654250,0), (2609820,1),
-            (2080360,3), (1333240,2), (2035220,2), (5616612,5), (2249020,1), (2783700,1),
-            (2411420,0), (1604890,2), (2602280,1), (1407450,1)
+            (1595910, 4), (2577750, 0), (1365520, 1), (1310720, 1), (1528180, 1), (2866457, 1),
+            (2394370, 4), (1203250, 2), (1537250, 2), (2783750, 1), (2654250, 0), (2609820, 1),
+            (2080360, 3), (1333240, 2), (2035220, 2), (5616612, 5), (2249020, 1), (2783700, 1),
+            (2411420, 0), (1604890, 2), (2602280, 1), (1407450, 1), (1595120, 1), (2083370, 1),
+            (2862482, 0), (2849996, 0), (1266970,2)
         ];
 
-        public static async Task WarmupAsync(IDbContextFactory<JitenDbContext> contextFactory)
+        public static async Task WarmupAsync(IDbContextFactory<JitenDbContext> contextFactory, Action<string>? log = null)
         {
-            await EnsureInitializedAsync(contextFactory);
+            await EnsureInitializedAsync(contextFactory, log);
         }
 
-        private static async Task EnsureInitializedAsync(IDbContextFactory<JitenDbContext> contextFactory)
+        private static async Task EnsureInitializedAsync(IDbContextFactory<JitenDbContext> contextFactory, Action<string>? log = null)
         {
             _contextFactory = contextFactory;
-            var runtime = await _parserRuntime.EnsureInitializedAsync(contextFactory);
+            var runtime = await _parserRuntime.EnsureInitializedAsync(contextFactory, log);
             DeckWordCache = runtime.DeckWordCache;
             JmDictCache = runtime.JmDictCache;
             _lookups = runtime.Lookups;
+            _wordFrequencyRanks = runtime.WordFrequencyRanks;
             _nameOnlyWordIds = runtime.NameOnlyWordIds;
         }
 
-        private static async Task PreprocessSentences(List<SentenceInfo> sentences)
+        private static async Task PreprocessSentences(List<SentenceInfo> sentences,
+                                                      ParserDiagnostics? diagnostics = null)
         {
             CleanSentenceTokens(sentences);
             SplitSuruInflectionsForNounCompounding(sentences);
@@ -86,8 +93,9 @@ namespace Jiten.Parser
             RepairLongVowelMisparses(sentences);
             RepairLongVowelTokens(sentences);
             FilterOrphanedMisparses(sentences);
-            ValidateGrammaticalSequences(sentences);
-            SplitUnresolvableTokens(sentences);
+            ValidateGrammaticalSequences(sentences, diagnostics);
+            StripTrailingParticles(sentences);
+            await ResegmentationEngine.TryImproveUncertainSpans(sentences, _lookups, _wordFrequencyRanks, JmDictCache);
             MarkPersonNameHonorificContexts(sentences);
         }
 
@@ -100,6 +108,21 @@ namespace Jiten.Parser
             "v4b", "v4g", "v4h", "v4k", "v4m", "v4n", "v4r", "v4s", "v4t",
             "adj-kari", "adj-ku", "adj-shiku"
         ];
+
+        // Unambiguously classical-Japanese surface forms used as sentence-level archaic context markers.
+        // ぬ and べき deliberately excluded — too common in modern literary/formal prose.
+        private static readonly HashSet<string> ClassicalMarkerSurfaces =
+        [
+            "けり", "けれ", // classical past/retrospective auxiliary
+            "べし", "べく", // classical necessity/conjecture
+            "ごとし", "ごとく", "ごとき", // classical similarity auxiliary
+            "まほし", "まほしく", // classical desiderative
+            "たまふ", "たまへ", "たまひ", // classical honorific verb (v4h)
+        ];
+
+        private static bool IsClassicalSentence(
+            IReadOnlyList<(WordInfo word, DeckWord? result, int? margin)> sentenceWords)
+            => sentenceWords.Any(w => ClassicalMarkerSurfaces.Contains(w.word.Text));
 
         private static readonly HashSet<string> PersonHonorifics = ["さん", "ちゃん", "くん", "氏", "様"];
 
@@ -339,14 +362,16 @@ namespace Jiten.Parser
         {
             var uniqueWords = new List<(WordInfo wordInfo, int occurrences)>();
             var wordCount =
-                new Dictionary<(string text, PartOfSpeech pos, string reading, bool isPersonNameContext, bool isNameLikeSudachiNoun),
+                new Dictionary<(string text, PartOfSpeech pos, string dictionaryForm, string reading, bool isPersonNameContext, bool
+                    isNameLikeSudachiNoun),
                     int>();
 
             foreach (var word in wordInfos)
             {
                 var isNameLikeSudachiNoun = PosMapper.IsNameLikeSudachiNoun(word.PartOfSpeech, word.PartOfSpeechSection1,
                                                                             word.PartOfSpeechSection2, word.PartOfSpeechSection3);
-                var key = (word.Text, word.PartOfSpeech, word.Reading, word.IsPersonNameContext, isNameLikeSudachiNoun);
+                var key = (word.Text, word.PartOfSpeech, word.DictionaryForm, word.Reading, word.IsPersonNameContext,
+                           isNameLikeSudachiNoun);
 
                 if (!wordCount.TryAdd(key, 1))
                 {
@@ -363,20 +388,20 @@ namespace Jiten.Parser
                 var wi = uniqueWords[i].wordInfo;
                 var isNameLikeSudachiNoun = PosMapper.IsNameLikeSudachiNoun(wi.PartOfSpeech, wi.PartOfSpeechSection1,
                                                                             wi.PartOfSpeechSection2, wi.PartOfSpeechSection3);
-                var key = (wi.Text, wi.PartOfSpeech, wi.Reading, wi.IsPersonNameContext, isNameLikeSudachiNoun);
+                var key = (wi.Text, wi.PartOfSpeech, wi.DictionaryForm, wi.Reading, wi.IsPersonNameContext, isNameLikeSudachiNoun);
                 uniqueWords[i] = (uniqueWords[i].wordInfo, wordCount[key]);
             }
 
             return uniqueWords;
         }
 
-        private static async Task<List<DeckWord?>> ProcessWordsInBatches(
+        private static async Task<List<(DeckWord? word, int? margin)>> ProcessWordsInBatches(
             List<(WordInfo wordInfo, int occurrences)> words,
             Deconjugator deconjugator,
             int batchSize = 1000,
             ParserDiagnostics? diagnostics = null)
         {
-            List<DeckWord?> allProcessedWords = new();
+            List<(DeckWord? word, int? margin)> allProcessedWords = new();
 
             for (int i = 0; i < words.Count; i += batchSize)
             {
@@ -437,7 +462,7 @@ namespace Jiten.Parser
                 }
 
                 for (int j = 0; j < batch.Count; j++)
-                    allProcessedWords.Add(batchResults[j].Word);
+                    allProcessedWords.Add((batchResults[j].Word, batchResults[j].Margin));
             }
 
             return allProcessedWords;
@@ -452,14 +477,24 @@ namespace Jiten.Parser
             var parser = new MorphologicalAnalyser { HasCompoundLookup = HasLookupForCompound };
             var sentences = await parser.Parse(text, preserveStopToken: preserveStopToken, diagnostics: diagnostics);
 
-            await PreprocessSentences(sentences);
+            await PreprocessSentences(sentences, diagnostics);
             PropagatePersonNameContexts(sentences);
             var wordInfos = ExtractWordInfos(sentences);
             var wordsWithOccurrences = wordInfos.Select(w => (w, 0)).ToList();
 
-            var processed = await ProcessWordsInBatches(wordsWithOccurrences, Deconjugator.Instance, diagnostics: diagnostics);
+            var processedWithMargins = await ProcessWordsInBatches(wordsWithOccurrences, Deconjugator.Instance, diagnostics: diagnostics);
 
-            var corrected = await ApplyAdjacentScoring(sentences, processed, diagnostics);
+            var marginMap = BuildMarginMap(sentences, processedWithMargins);
+            if (await ResegmentationEngine.TryResegmentLowConfidenceTokens(sentences, _lookups, _wordFrequencyRanks, marginMap,
+                                                                           JmDictCache))
+            {
+                diagnostics?.Results.Clear();
+                wordInfos = ExtractWordInfos(sentences);
+                wordsWithOccurrences = wordInfos.Select(w => (w, 0)).ToList();
+                processedWithMargins = await ProcessWordsInBatches(wordsWithOccurrences, Deconjugator.Instance, diagnostics: diagnostics);
+            }
+
+            var corrected = await ApplyAdjacentScoring(sentences, processedWithMargins, diagnostics);
 
             return ExcludeFinalMisparses(corrected);
         }
@@ -506,7 +541,7 @@ namespace Jiten.Parser
 
             // Pass 1: Preprocess all texts, then propagate person names across all texts
             for (int textIndex = 0; textIndex < batchedSentences.Count; textIndex++)
-                await PreprocessSentences(batchedSentences[textIndex]);
+                await PreprocessSentences(batchedSentences[textIndex], diagnostics);
 
             PropagatePersonNameContexts(batchedSentences);
 
@@ -543,28 +578,43 @@ namespace Jiten.Parser
             var wordInfos = ExtractWordInfos(sentences);
             var uniqueWords = CountUniqueWords(wordInfos);
 
-            var allProcessedWords = await ProcessWordsInBatches(uniqueWords, deconjugator);
+            var allProcessedWithMargins = await ProcessWordsInBatches(uniqueWords, deconjugator);
 
             // Build lookup by direct 1:1 index mapping
-            var resultLookup = new Dictionary<(string, PartOfSpeech, string, bool, bool), DeckWord?>();
+            var resultLookup = new Dictionary<(string, PartOfSpeech, string, string, bool, bool), (DeckWord? word, int? margin)>();
             for (int i = 0; i < uniqueWords.Count; i++)
             {
                 var key = GetDedupKey(uniqueWords[i].wordInfo);
-                resultLookup.TryAdd(key, allProcessedWords[i]);
+                resultLookup.TryAdd(key, allProcessedWithMargins[i]);
+            }
+
+            var marginMap = BuildMarginMapFromLookup(sentences, resultLookup);
+            if (await ResegmentationEngine.TryResegmentLowConfidenceTokens(sentences, _lookups, _wordFrequencyRanks, marginMap,
+                                                                           JmDictCache))
+            {
+                wordInfos = ExtractWordInfos(sentences);
+                uniqueWords = CountUniqueWords(wordInfos);
+                allProcessedWithMargins = await ProcessWordsInBatches(uniqueWords, deconjugator);
+                resultLookup = new Dictionary<(string, PartOfSpeech, string, string, bool, bool), (DeckWord? word, int? margin)>();
+                for (int i = 0; i < uniqueWords.Count; i++)
+                {
+                    var key = GetDedupKey(uniqueWords[i].wordInfo);
+                    resultLookup.TryAdd(key, allProcessedWithMargins[i]);
+                }
             }
 
             var corrected = await ApplyAdjacentScoring(sentences, resultLookup);
 
             // Sum occurrences while deduplicating by WordId and ReadingIndex
             var processedWords = corrected
-                             .GroupBy(x => new { x.WordId, x.ReadingIndex })
-                             .Select(g =>
-                             {
-                                 var first = g.First();
-                                 first.Occurrences = g.Count();
-                                 return first;
-                             })
-                             .ToArray();
+                                 .GroupBy(x => new { x.WordId, x.ReadingIndex })
+                                 .Select(g =>
+                                 {
+                                     var first = g.First();
+                                     first.Occurrences = g.Count();
+                                     return first;
+                                 })
+                                 .ToArray();
 
             processedWords = ExcludeFinalMisparses(processedWords).ToArray();
 
@@ -611,9 +661,10 @@ namespace Jiten.Parser
             wordInfos.ForEach(x => x.Text = SmallTsuLongVowelRegex.Replace(x.Text, ""));
             var wordsWithOccurrences = wordInfos.Select(w => (w, 0)).ToList();
 
-            var processed = await ProcessWordsInBatches(wordsWithOccurrences, Deconjugator.Instance, batchSize: 5000);
+            var processedWithMargins = await ProcessWordsInBatches(wordsWithOccurrences, Deconjugator.Instance, batchSize: 5000);
 
-            return processed
+            return processedWithMargins
+                   .Select(p => p.word)
                    .Where(w => w == null || !ExcludedMisparses.Contains((w.WordId, w.ReadingIndex)))
                    .ToList();
         }
@@ -632,21 +683,26 @@ namespace Jiten.Parser
         private readonly struct ProcessWordResult
         {
             private ProcessWordResult(ProcessWordStatus status, DeckWord? word = null,
-                                      DeckWordCacheKey? cacheKey = null, DeckWord? cacheWord = null)
+                                      DeckWordCacheKey? cacheKey = null, DeckWord? cacheWord = null,
+                                      int? margin = null)
             {
                 Status = status;
                 Word = word;
                 CacheKey = cacheKey;
                 CacheWord = cacheWord;
+                Margin = margin;
             }
 
             public ProcessWordStatus Status { get; }
             public DeckWord? Word { get; }
             public DeckWordCacheKey? CacheKey { get; }
             public DeckWord? CacheWord { get; }
+            public int? Margin { get; }
 
-            public static ProcessWordResult FromResolved(DeckWord word, DeckWordCacheKey? cacheKey = null, DeckWord? cacheWord = null)
-                => new(ProcessWordStatus.Resolved, word, cacheKey, cacheWord);
+            public static ProcessWordResult FromResolved(DeckWord word, DeckWordCacheKey? cacheKey = null,
+                                                         DeckWord? cacheWord = null, int? margin = null)
+                => new(ProcessWordStatus.Resolved, word, cacheKey, cacheWord, margin);
+
             public static ProcessWordResult FilteredOut { get; } = new(ProcessWordStatus.FilteredOut);
             public static ProcessWordResult TimedOut { get; } = new(ProcessWordStatus.TimedOut);
             public static ProcessWordResult Unresolved { get; } = new(ProcessWordStatus.Unresolved);
@@ -704,14 +760,16 @@ namespace Jiten.Parser
                         if (cachedWord != null && cachedWord.WordId != -1)
                         {
                             return ProcessWordResult.FromResolved(
-                                new DeckWord
-                                {
-                                    WordId = cachedWord.WordId, OriginalText = wordData.wordInfo.Text,
-                                    ReadingIndex = cachedWord.ReadingIndex, Occurrences = wordData.occurrences,
-                                    Conjugations = cachedWord.Conjugations, PartsOfSpeech = cachedWord.PartsOfSpeech,
-                                    Origin = cachedWord.Origin, SudachiReading = wordData.wordInfo.Reading,
-                                    SudachiPartOfSpeech = wordData.wordInfo.PartOfSpeech
-                                });
+                                                                  new DeckWord
+                                                                  {
+                                                                      WordId = cachedWord.WordId, OriginalText = wordData.wordInfo.Text,
+                                                                      ReadingIndex = cachedWord.ReadingIndex,
+                                                                      Occurrences = wordData.occurrences,
+                                                                      Conjugations = cachedWord.Conjugations,
+                                                                      PartsOfSpeech = cachedWord.PartsOfSpeech, Origin = cachedWord.Origin,
+                                                                      SudachiReading = wordData.wordInfo.Reading,
+                                                                      SudachiPartOfSpeech = wordData.wordInfo.PartOfSpeech
+                                                                  }, margin: cachedWord.CachedMargin);
                         }
                     }
                     catch (Exception ex)
@@ -721,6 +779,7 @@ namespace Jiten.Parser
                 }
 
                 DeckWord? processedWord = null;
+                int? resolvedMargin = null;
                 bool isProcessed = false;
                 int attemptCount = 0;
                 const int maxAttempts = 3; // Limit how many attempts we make to prevent infinite loops
@@ -731,8 +790,11 @@ namespace Jiten.Parser
                     attemptCount++;
                     try
                     {
-                        // If the word has a pre-matched wordId (e.g. from CombineCompounds), use it directly
-                        if (wordData.wordInfo.PreMatchedWordId.HasValue)
+                        // If the word has a definitively pre-matched wordId (e.g. from CombineCompounds) and no
+                        // competing candidate list, use it directly. When PreMatchedCandidateWordIds is also
+                        // set (resegmentation case), fall through to the full scorer instead.
+                        if (wordData.wordInfo.PreMatchedWordId.HasValue
+                            && wordData.wordInfo.PreMatchedCandidateWordIds == null)
                         {
                             var preMatchedWordId = wordData.wordInfo.PreMatchedWordId.Value;
                             var wordCache = await JmDictCache.GetWordsAsync([preMatchedWordId]);
@@ -741,7 +803,7 @@ namespace Jiten.Parser
                                 var textForReadingLookup = !string.IsNullOrEmpty(wordData.wordInfo.DictionaryForm)
                                     ? wordData.wordInfo.DictionaryForm
                                     : wordData.wordInfo.Text;
-                                var readingIndex = GetBestReadingIndex(preMatchedWord, textForReadingLookup);
+                                var readingIndex = GetBestReadingIndex(preMatchedWord, textForReadingLookup, wordData.wordInfo.Reading);
                                 processedWord = new DeckWord
                                                 {
                                                     WordId = preMatchedWordId, ReadingIndex = readingIndex,
@@ -765,10 +827,12 @@ namespace Jiten.Parser
                                 // The word might be a noun misparsed as a verb/adjective like お祭り
                                 var nounResult = await DeconjugateWord(wordData, diagnostics);
                                 processedWord = nounResult.word;
+                                resolvedMargin = nounResult.margin;
                             }
                             else
                             {
                                 processedWord = verbResult.word;
+                                resolvedMargin = verbResult.margin;
                             }
                         }
                         else
@@ -799,7 +863,7 @@ namespace Jiten.Parser
                                     // Prefer direct lookup for na-adjective stems that Sudachi may label as nouns/names (e.g., 朧気).
                                     var naDirect = await DeconjugateWord(wordData, diagnostics);
                                     if (naDirect is { success: true, word: not null })
-                                        verbResult = (true, naDirect.word);
+                                        verbResult = (true, naDirect.word, naDirect.margin);
                                     else
                                         verbResult = await DeconjugateVerbOrAdjective(wordData, deconjugator, diagnostics);
                                 }
@@ -811,15 +875,19 @@ namespace Jiten.Parser
                                     wordData.wordInfo.PartOfSpeech = PartOfSpeech.Interjection;
                                     var interjectionDirect = await DeconjugateWord(wordData, diagnostics);
                                     if (interjectionDirect is { success: true, word: not null })
-                                        verbResult = (true, interjectionDirect.word);
+                                        verbResult = (true, interjectionDirect.word, interjectionDirect.margin);
                                 }
 
                                 wordData.wordInfo.PartOfSpeech = oldPos;
                                 processedWord = verbResult.word;
+                                resolvedMargin = verbResult.margin;
                             }
-                            else if (wordData.wordInfo.PartOfSpeech is PartOfSpeech.Pronoun or PartOfSpeech.Conjunction or PartOfSpeech.Interjection or PartOfSpeech.Particle or PartOfSpeech.Adverb or PartOfSpeech.NaAdjective)
+                            else if (wordData.wordInfo.PartOfSpeech is PartOfSpeech.Pronoun or PartOfSpeech.Conjunction
+                                     or PartOfSpeech.Interjection or PartOfSpeech.Particle or PartOfSpeech.Adverb
+                                     or PartOfSpeech.NaAdjective)
                             {
                                 processedWord = nounResult.word;
+                                resolvedMargin = nounResult.margin;
                             }
                             else
                             {
@@ -853,25 +921,29 @@ namespace Jiten.Parser
                                                  ruWord.GetPriorityScore(isKanaForStem) > bestV1.GetPriorityScore(isKanaForStem)))
                                                 bestV1 = ruWord;
                                         }
+
                                         if (bestV1 != null)
                                         {
                                             // GetBestReadingIndex can't find the stem form (e.g., "抱え" isn't in 抱える's forms).
                                             // Instead find the kana form whose stem (text minus る) matches the surface.
                                             var stemHira = KanaConverter.ToHiragana(wordData.wordInfo.Text, convertLongVowelMark: false);
                                             var stemReadingIndex = bestV1.Forms
-                                                .Where(f => f.FormType == JmDictFormType.KanaForm &&
-                                                            KanaConverter.ToHiragana(f.Text, convertLongVowelMark: false) == stemHira + "る")
-                                                .Select(f => (byte)f.ReadingIndex)
-                                                .DefaultIfEmpty((byte)0)
-                                                .First();
-                                            verbFallback = (true, new DeckWord
-                                            {
-                                                WordId = bestV1.WordId, OriginalText = wordData.wordInfo.Text,
-                                                ReadingIndex = stemReadingIndex, Occurrences = wordData.occurrences,
-                                                Conjugations = ["continuative"],
-                                                PartsOfSpeech = bestV1.PartsOfSpeech.ToPartOfSpeech(),
-                                                Origin = bestV1.Origin
-                                            });
+                                                                         .Where(f => f.FormType == JmDictFormType.KanaForm &&
+                                                                                     KanaConverter.ToHiragana(f.Text,
+                                                                                         convertLongVowelMark: false) ==
+                                                                                     stemHira + "る")
+                                                                         .Select(f => (byte)f.ReadingIndex)
+                                                                         .DefaultIfEmpty((byte)0)
+                                                                         .First();
+                                            verbFallback = (
+                                                true,
+                                                new DeckWord
+                                                {
+                                                    WordId = bestV1.WordId, OriginalText = wordData.wordInfo.Text,
+                                                    ReadingIndex = stemReadingIndex, Occurrences = wordData.occurrences,
+                                                    Conjugations = ["continuative"], PartsOfSpeech = bestV1.PartsOfSpeech.ToPartOfSpeech(),
+                                                    Origin = bestV1.Origin
+                                                }, (int?)null);
                                         }
                                     }
                                 }
@@ -879,33 +951,82 @@ namespace Jiten.Parser
                                 if (verbFallback is { success: true, word: not null } && nounResult.word != null)
                                 {
                                     var bothCache = await JmDictCache.GetWordsAsync(
-                                        [nounResult.word.WordId, verbFallback.word.WordId]);
+                                                                                    [nounResult.word.WordId, verbFallback.word.WordId]);
                                     if (bothCache.TryGetValue(nounResult.word.WordId, out var nounEntry) &&
                                         bothCache.TryGetValue(verbFallback.word.WordId, out var verbEntry))
                                     {
                                         bool isKana = WanaKana.IsKana(wordData.wordInfo.Text);
 
+                                        // Use the same word-level scoring as the main scorer (WordPriorityScorer +
+                                        // EntryPriorityScorer) so archaic penalties, copula boosts, etc. are consistent.
+                                        static int NounVerbScore(JmDictWord word, byte readingIndex)
+                                        {
+                                            var form = word.Forms.FirstOrDefault(f => (byte)f.ReadingIndex == readingIndex)
+                                                       ?? word.Forms.FirstOrDefault();
+                                            if (form == null) return 0;
+                                            var candidate = new FormCandidate(word, form, readingIndex, form.Text, null);
+                                            return WordPriorityScorer.Score(candidate, isNameContext: false, isArchaicSentence: false,
+                                                                            ArchaicPosTypes)
+                                                   + EntryPriorityScorer.Score(candidate);
+                                        }
+
                                         var reading = wordData.wordInfo.Reading;
-                                        bool nounReadingMatch = !string.IsNullOrEmpty(reading) && HasKanaReadingMatch(nounEntry, reading);
-                                        bool verbReadingMatch = !string.IsNullOrEmpty(reading) && HasKanaReadingMatch(verbEntry, reading, allowStemMatch: true);
+                                        bool nounReadingMatch = !string.IsNullOrEmpty(reading) &&
+                                                                FormCandidateFactory.HasKanaReadingMatch(nounEntry, reading);
+                                        bool verbReadingMatch = !string.IsNullOrEmpty(reading) &&
+                                                                FormCandidateFactory.HasKanaReadingMatch(verbEntry, reading,
+                                                                    allowStemMatch: true);
+                                        bool verbExactReadingMatch = !string.IsNullOrEmpty(reading) &&
+                                                                     FormCandidateFactory.HasKanaReadingMatch(verbEntry, reading);
 
                                         if (nounReadingMatch && !verbReadingMatch)
+                                        {
                                             processedWord = nounResult.word;
+                                            resolvedMargin = nounResult.margin;
+                                        }
                                         else if (!nounReadingMatch && verbReadingMatch)
+                                        {
                                             processedWord = verbFallback.word;
+                                            resolvedMargin = verbFallback.margin;
+                                        }
+                                        else if (nounReadingMatch && verbReadingMatch && !verbExactReadingMatch)
+                                        {
+                                            // Verb only matches as a stem (e.g. できる's stem でき matches 出来).
+                                            // Require a clear priority margin before overriding Sudachi's noun tag.
+                                            if (NounVerbScore(verbEntry, verbFallback.word.ReadingIndex) -
+                                                NounVerbScore(nounEntry, nounResult.word.ReadingIndex) > 15)
+                                            {
+                                                processedWord = verbFallback.word;
+                                                resolvedMargin = verbFallback.margin;
+                                            }
+                                            else
+                                            {
+                                                processedWord = nounResult.word;
+                                                resolvedMargin = nounResult.margin;
+                                            }
+                                        }
+                                        else if (NounVerbScore(verbEntry, verbFallback.word.ReadingIndex) >
+                                                 NounVerbScore(nounEntry, nounResult.word.ReadingIndex))
+                                        {
+                                            processedWord = verbFallback.word;
+                                            resolvedMargin = verbFallback.margin;
+                                        }
                                         else
-                                            processedWord = verbEntry.GetPriorityScore(isKana) > nounEntry.GetPriorityScore(isKana)
-                                                ? verbFallback.word
-                                                : nounResult.word;
+                                        {
+                                            processedWord = nounResult.word;
+                                            resolvedMargin = nounResult.margin;
+                                        }
                                     }
                                     else
                                     {
                                         processedWord = nounResult.word;
+                                        resolvedMargin = nounResult.margin;
                                     }
                                 }
                                 else
                                 {
                                     processedWord = nounResult.word;
+                                    resolvedMargin = nounResult.margin;
                                 }
                             }
                         }
@@ -985,16 +1106,17 @@ namespace Jiten.Parser
                 processedWord.SudachiPartOfSpeech = wordData.wordInfo.PartOfSpeech;
 
                 if (!UseCache)
-                    return ProcessWordResult.FromResolved(processedWord);
+                    return ProcessWordResult.FromResolved(processedWord, margin: resolvedMargin);
 
                 var cacheWord = new DeckWord
-                {
-                    WordId = processedWord.WordId, OriginalText = processedWord.OriginalText,
-                    ReadingIndex = processedWord.ReadingIndex, Conjugations = processedWord.Conjugations,
-                    PartsOfSpeech = processedWord.PartsOfSpeech, Origin = processedWord.Origin
-                };
+                                {
+                                    WordId = processedWord.WordId, OriginalText = processedWord.OriginalText,
+                                    ReadingIndex = processedWord.ReadingIndex, Conjugations = processedWord.Conjugations,
+                                    PartsOfSpeech = processedWord.PartsOfSpeech, Origin = processedWord.Origin,
+                                    CachedMargin = resolvedMargin
+                                };
 
-                return ProcessWordResult.FromResolved(processedWord, cacheKey, cacheWord);
+                return ProcessWordResult.FromResolved(processedWord, cacheKey, cacheWord, resolvedMargin);
             }
             finally
             {
@@ -1002,8 +1124,9 @@ namespace Jiten.Parser
             }
         }
 
-        private static async Task<(bool success, DeckWord? word)> DeconjugateWord((WordInfo wordInfo, int occurrences) wordData,
-                                                                                  ParserDiagnostics? diagnostics = null)
+        private static async Task<(bool success, DeckWord? word, int? margin)> DeconjugateWord(
+            (WordInfo wordInfo, int occurrences) wordData,
+            ParserDiagnostics? diagnostics = null)
         {
             string text = wordData.wordInfo.Text;
 
@@ -1011,55 +1134,28 @@ namespace Jiten.Parser
             var textWithoutBar = text.TrimEnd('ー');
             if ((textWithoutBar.Length > 0 && textWithoutBar.All(char.IsDigit)) || (text.Length == 1 && text.IsAsciiOrFullWidthLetter()))
             {
-                return (false, null);
+                return (false, null, null);
             }
 
-            _lookups.TryGetValue(text, out List<int>? candidates);
             var textInHiragana = KanaConverter.ToHiragana(wordData.wordInfo.Text, convertLongVowelMark: false);
-            _lookups.TryGetValue(textInHiragana, out var candidatesHiragana);
-
-            candidates = candidates != null ? new List<int>(candidates) : [];
-
-            var textNormalized = KanaNormalizer.Normalize(textInHiragana);
-            if (textNormalized != textInHiragana)
-            {
-                _lookups.TryGetValue(textNormalized, out List<int>? candidatesNormalized);
-                if (candidatesNormalized is { Count: not 0 })
-                    candidates.AddRange(candidatesNormalized);
-            }
-
-
-            // Add candidatesInHiragana to candidates, deduplicate 
-            if (candidatesHiragana is { Count: not 0 })
-            {
-                var newCandidates = new List<int>(candidates);
-                newCandidates.AddRange(candidatesHiragana);
-                candidates = newCandidates.Distinct().ToList();
-            }
-
+            List<int>? candidates;
             bool isStripped = false;
-
             string textStripped = "";
-            if (text.Contains('ー'))
+
+            if (wordData.wordInfo.PreMatchedCandidateWordIds is { Count: > 0 } constrainedIds)
             {
-                isStripped = true;
-                textStripped = text.Replace("ー", "");
+                candidates = new List<int>(constrainedIds);
+            }
+            else
+            {
+                var collected = LookupCandidateCollector.CollectIds(_lookups, text,
+                                                                    includeKanaNormalized: true, includeLongVowelStripped: true);
+                candidates = collected.Count > 0 ? collected : null;
 
-                // HEURISTIC:
-                // If the word ends with 'ー' and the stripped version is very short (<= 2 chars),
-                // it is almost certainly a slang adjective (e.g., すげー -> すげ, やべー -> やべ).
-                // We should SKIP the stripped lookup here to avoid matching random nouns like "Sedge" (すげ).
-                //
-                // However, allow it if the 'ー' was in the middle (e.g., だーかーら -> だから).
-                bool endsInBar = text.EndsWith("ー");
-                bool isShort = textStripped.Length <= 2;
-
-                if (!endsInBar || !isShort)
+                if (text.Contains('ー'))
                 {
-                    var textStrippedHira = KanaConverter.ToHiragana(textStripped);
-                    _lookups.TryGetValue(textStrippedHira, out List<int>? stripIds);
-                    if (stripIds != null) candidates ??= new List<int>();
-                    if (stripIds != null) candidates.AddRange(stripIds);
+                    isStripped = true;
+                    textStripped = text.Replace("ー", "");
                 }
             }
 
@@ -1077,13 +1173,13 @@ namespace Jiten.Parser
                     // If we hit an exception when retrieving from cache, return a failure
                     // but don't crash the entire process
                     Console.WriteLine($"Error retrieving word cache: {ex.Message}");
-                    return (false, null);
+                    return (false, null, null);
                 }
 
                 // Early return if we got no words from cache to avoid NullReferenceException
                 if (wordCache.Count == 0)
                 {
-                    return (false, null);
+                    return (false, null, null);
                 }
 
                 bool isNameLikeSudachiNoun = PosMapper.IsNameLikeSudachiNoun(
@@ -1162,6 +1258,7 @@ namespace Jiten.Parser
                         if (posList.Any(p => p is not (PartOfSpeech.Name or PartOfSpeech.Unknown)))
                             compatibleNonNameMatches.Add(word);
                     }
+
                     candidatePool = compatibleNonNameMatches;
                     isNameContext = false;
                 }
@@ -1173,6 +1270,7 @@ namespace Jiten.Parser
                         if (wordCache.TryGetValue(id, out var word))
                             lastResortCandidates.Add(word);
                     }
+
                     if (lastResortCandidates.Count > 0)
                     {
                         candidatePool = lastResortCandidates;
@@ -1180,14 +1278,14 @@ namespace Jiten.Parser
                     }
                     else
                     {
-                        return (false, null);
+                        return (false, null, null);
                     }
                 }
 
                 var allFormCandidates = new List<FormCandidate>();
                 foreach (JmDictWord word in candidatePool)
                 {
-                    var forms = EnumerateCandidateForms(word, textInHiragana, allowLooseLvmMatch: true, surface: text);
+                    var forms = FormCandidateFactory.EnumerateCandidateForms(word, textInHiragana, allowLooseLvmMatch: true, surface: text);
                     allFormCandidates.AddRange(forms);
 
                     // Also try with stripped text if applicable
@@ -1198,17 +1296,32 @@ namespace Jiten.Parser
                     if (strippedHira == textInHiragana)
                         continue;
 
-                    var strippedForms = EnumerateCandidateForms(word, strippedHira, allowLooseLvmMatch: true, surface: textStripped);
+                    var strippedForms =
+                        FormCandidateFactory.EnumerateCandidateForms(word, strippedHira, allowLooseLvmMatch: true, surface: textStripped);
                     allFormCandidates.AddRange(strippedForms);
                 }
 
-                var bestPair = PickBestFormCandidate(allFormCandidates, text,
-                                                     wordData.wordInfo.DictionaryForm, wordData.wordInfo.NormalizedForm, isNameContext,
-                                                     diagnostics,
-                                                     sudachiReading: wordData.wordInfo.Reading);
+                var (bestPair, margin) = PickBestFormCandidate(allFormCandidates, text,
+                                                               wordData.wordInfo.DictionaryForm, wordData.wordInfo.NormalizedForm,
+                                                               isNameContext,
+                                                               diagnostics,
+                                                               sudachiReading: wordData.wordInfo.Reading);
+
+                // Frequency-rank tiebreaker for resegmented tokens: when the full scorer finds no preference
+                // (margin == 0), defer to the frequency-best candidate identified at resegmentation time.
+                if (margin == 0
+                    && wordData.wordInfo.PreMatchedCandidateWordIds != null
+                    && wordData.wordInfo.PreMatchedWordId is { } preferredId)
+                {
+                    var preferred = allFormCandidates
+                                    .Where(c => c.Word.WordId == preferredId)
+                                    .MaxBy(c => c.TotalScore);
+                    if (preferred != null && preferred.TotalScore >= bestPair!.TotalScore)
+                        bestPair = preferred;
+                }
 
                 if (bestPair == null)
-                    return (false, null);
+                    return (false, null, null);
 
                 DeckWord deckWord = new()
                                     {
@@ -1216,13 +1329,13 @@ namespace Jiten.Parser
                                         ReadingIndex = bestPair.ReadingIndex, Occurrences = wordData.occurrences,
                                         PartsOfSpeech = bestPair.Word.PartsOfSpeech.ToPartOfSpeech(), Origin = bestPair.Word.Origin
                                     };
-                return (true, deckWord);
+                return (true, deckWord, margin);
             }
 
-            return (false, null);
+            return (false, null, null);
         }
 
-        private static async Task<(bool success, DeckWord? word)> DeconjugateVerbOrAdjective(
+        private static async Task<(bool success, DeckWord? word, int? margin)> DeconjugateVerbOrAdjective(
             (WordInfo wordInfo, int occurrences) wordData, Deconjugator deconjugator,
             ParserDiagnostics? diagnostics = null)
         {
@@ -1231,7 +1344,7 @@ namespace Jiten.Parser
             if (textWithoutBar.Length > 0 && textWithoutBar.All(char.IsDigit) ||
                 (textWithoutBar.Length == 1 && textWithoutBar.IsAsciiOrFullWidthLetter()))
             {
-                return (false, null);
+                return (false, null, null);
             }
 
             var normalizedText = KanaNormalizer.Normalize(KanaConverter.ToHiragana(wordData.wordInfo.Text));
@@ -1239,7 +1352,7 @@ namespace Jiten.Parser
             // Exclude single latin character
             if (normalizedText.Length == 1 && normalizedText.IsAsciiOrFullWidthLetter())
             {
-                return (false, null);
+                return (false, null, null);
             }
 
             var deconjugated = deconjugator.Deconjugate(normalizedText)
@@ -1259,7 +1372,7 @@ namespace Jiten.Parser
 
             // if there's a candidate that's the same as the base word, put it first in the list
             var baseDictionaryWord = KanaConverter.ToHiragana(wordData.wordInfo.DictionaryForm.Replace("ゎ", "わ").Replace("ヮ", "わ"),
-                                                         convertLongVowelMark: false);
+                                                              convertLongVowelMark: false);
             var baseDictionaryWordIndex = candidates.FindIndex(c => c.form.Text == baseDictionaryWord);
             if (baseDictionaryWordIndex != -1)
             {
@@ -1296,7 +1409,7 @@ namespace Jiten.Parser
                 if (dictFormLookupIds is not { Count: > 0 } && !string.IsNullOrEmpty(wordData.wordInfo.NormalizedForm))
                 {
                     var normalizedHiragana = KanaConverter.ToHiragana(wordData.wordInfo.NormalizedForm,
-                                                                 convertLongVowelMark: false);
+                                                                      convertLongVowelMark: false);
                     if (_lookups.TryGetValue(normalizedHiragana, out dictFormLookupIds) ||
                         _lookups.TryGetValue(wordData.wordInfo.NormalizedForm, out dictFormLookupIds))
                     {
@@ -1312,16 +1425,13 @@ namespace Jiten.Parser
             // E.g. 悪しからず is an adverb entry; without this, deconjugation finds 悪しい instead.
             // Note: keep the FULL lookup set for form enumeration — some ids may already be in
             // allCandidateIds via deconjugation but were POS-filtered out in the matches loop.
-            var directSurfaceIds = new List<int>();
-            if (_lookups.TryGetValue(wordData.wordInfo.Text, out var dkj)) directSurfaceIds.AddRange(dkj);
-            if (_lookups.TryGetValue(normalizedText, out var dkh)) directSurfaceIds.AddRange(dkh);
-            directSurfaceIds = directSurfaceIds.Distinct().ToList();
+            var directSurfaceIds = LookupCandidateCollector.CollectIds(_lookups, wordData.wordInfo.Text, includeKanaNormalized: false);
             var newDirectSurfaceIds = directSurfaceIds.Except(allCandidateIds).ToList();
             if (newDirectSurfaceIds.Count > 0)
                 allCandidateIds = allCandidateIds.Concat(newDirectSurfaceIds).Distinct().ToList();
 
             if (!allCandidateIds.Any())
-                return (false, null);
+                return (false, null, null);
 
             Dictionary<int, JmDictWord> wordCache;
             try
@@ -1331,7 +1441,7 @@ namespace Jiten.Parser
                 // Check if we got any results
                 if (wordCache.Count == 0)
                 {
-                    return (false, null);
+                    return (false, null, null);
                 }
             }
             catch (Exception ex)
@@ -1339,29 +1449,11 @@ namespace Jiten.Parser
                 // If we hit an exception when retrieving from cache, return a failure
                 // but don't crash the entire process
                 Console.WriteLine($"Error retrieving verb/adjective word cache: {ex.Message}");
-                return (false, null);
+                return (false, null, null);
             }
 
-            List<(JmDictWord word, DeconjugationForm form)> matches = new();
-
-            foreach (var candidate in candidates)
-            {
-                foreach (var id in candidate.ids)
-                {
-                    if (!wordCache.TryGetValue(id, out var word)) continue;
-
-                    if (!PosMapper.IsJmDictCompatibleWithSudachi(word.PartsOfSpeech, wordData.wordInfo.PartOfSpeech))
-                        continue;
-
-                    // Validate that deconjugation POS tags match the word's POS.
-                    // This prevents nouns from being incorrectly matched via verb deconjugation rules.
-                    var formPosTags = PosMapper.GetValidatableDeconjTags(candidate.form.Tags).ToList();
-                    if (formPosTags.Count > 0 && !PosMapper.AreDeconjTagsCompatibleWithJmDict(formPosTags, word.PartsOfSpeech))
-                        continue;
-
-                    matches.Add((word, candidate.form));
-                }
-            }
+            var matchResults = DeconjugationMatcher.FilterMatches(candidates, wordCache, wordData.wordInfo.PartOfSpeech);
+            List<(JmDictWord word, DeconjugationForm form)> matches = matchResults.Select(m => (m.Word, m.Form)).ToList();
 
             // When Sudachi's DictionaryForm identifies a different base form (e.g., いかん → DictForm いく),
             // remove identity matches for suru-nouns that are only Verb-compatible through vs tags.
@@ -1373,8 +1465,8 @@ namespace Jiten.Parser
                 if (hasDictFormMatch)
                 {
                     matches.RemoveAll(m =>
-                        m.form.Process.Count == 0 &&
-                        IsSuruNounWithoutExpression(m.word.PartsOfSpeech));
+                                          m.form.Process.Count == 0 &&
+                                          FormCandidateFactory.IsSuruNounWithoutExpression(m.word.PartsOfSpeech));
                 }
             }
 
@@ -1386,7 +1478,7 @@ namespace Jiten.Parser
                 if (!string.IsNullOrEmpty(wordData.wordInfo.DictionaryForm))
                 {
                     var dictFormHiragana = KanaConverter.ToHiragana(wordData.wordInfo.DictionaryForm.Replace("ゎ", "わ").Replace("ヮ", "わ"),
-                                                               convertLongVowelMark: false);
+                                                                    convertLongVowelMark: false);
                     if (_lookups.TryGetValue(dictFormHiragana, out List<int>? dictLookup) ||
                         _lookups.TryGetValue(wordData.wordInfo.DictionaryForm, out dictLookup))
                     {
@@ -1423,7 +1515,7 @@ namespace Jiten.Parser
                     wordData.wordInfo.NormalizedForm != wordData.wordInfo.DictionaryForm)
                 {
                     var normalizedHiragana = KanaConverter.ToHiragana(wordData.wordInfo.NormalizedForm,
-                                                                 convertLongVowelMark: false);
+                                                                      convertLongVowelMark: false);
                     if (_lookups.TryGetValue(normalizedHiragana, out List<int>? normalizedLookup) ||
                         _lookups.TryGetValue(wordData.wordInfo.NormalizedForm, out normalizedLookup))
                     {
@@ -1434,7 +1526,8 @@ namespace Jiten.Parser
                                 var normalizedWordCache = await JmDictCache.GetWordsAsync(normalizedLookup);
                                 var recoveredProcess = deconjugated
                                                        .Where(d => d.Process.Count > 0 &&
-                                                                    (d.Text.StartsWith(normalizedHiragana) || d.Text.StartsWith(baseDictionaryWord)))
+                                                                   (d.Text.StartsWith(normalizedHiragana) ||
+                                                                    d.Text.StartsWith(baseDictionaryWord)))
                                                        .MinBy(d => d.Text.Length)?.Process
                                                        ?.Where(p => !string.IsNullOrEmpty(p)).ToList() ?? [];
                                 foreach (var normalizedWord in normalizedWordCache.Values)
@@ -1460,28 +1553,14 @@ namespace Jiten.Parser
                 // retry allowing any non-Name entry (keep deconjugation tag validation).
                 if (matches.Count == 0)
                 {
-                    foreach (var candidate in candidates)
-                    {
-                        foreach (var id in candidate.ids)
-                        {
-                            if (!wordCache.TryGetValue(id, out var word)) continue;
-
-                            var posList = word.PartsOfSpeech.ToPartOfSpeech();
-                            if (!posList.Any(p => p is not (PartOfSpeech.Name or PartOfSpeech.Unknown)))
-                                continue;
-
-                            var formPosTags = PosMapper.GetValidatableDeconjTags(candidate.form.Tags).ToList();
-                            if (formPosTags.Count > 0 && !PosMapper.AreDeconjTagsCompatibleWithJmDict(formPosTags, word.PartsOfSpeech))
-                                continue;
-
-                            matches.Add((word, candidate.form));
-                        }
-                    }
+                    foreach (var m in DeconjugationMatcher.FilterMatches(candidates, wordCache, wordData.wordInfo.PartOfSpeech,
+                                                                         strictPosCheck: false))
+                        matches.Add((m.Word, m.Form));
                 }
 
                 if (matches.Count == 0)
                 {
-                    return (false, null);
+                    return (false, null, null);
                 }
             }
 
@@ -1490,27 +1569,38 @@ namespace Jiten.Parser
             var allFormCandidates = new List<FormCandidate>();
             foreach (var match in matches)
             {
-                var formCandidates = EnumerateCandidateForms(match.word, match.form.Text,
-                                                             allowLooseLvmMatch: true, deconjForm: match.form,
-                                                             surface: wordData.wordInfo.Text);
+                var formCandidates = FormCandidateFactory.EnumerateCandidateForms(match.word, match.form.Text,
+                                                                                  allowLooseLvmMatch: true, deconjForm: match.form,
+                                                                                  surface: wordData.wordInfo.Text);
                 allFormCandidates.AddRange(formCandidates);
             }
 
             // Add direct-surface candidates so surface-exact entries compete with deconjugated forms.
+            // Skip words already in matches (avoids duplicates that produce a false margin=0).
+            // Mark POS-incompatible words so the scorer can penalise them when POS-compatible
+            // matches already exist (e.g. noun 1197950 "artistry" losing to adj-na 2653620 "serious").
+            var matchedWordIds = new HashSet<int>(matches.Select(m => m.word.WordId));
             foreach (var id in directSurfaceIds)
             {
+                if (matchedWordIds.Contains(id)) continue;
                 if (!wordCache.TryGetValue(id, out var directWord)) continue;
                 var posList = directWord.PartsOfSpeech.ToPartOfSpeech();
                 if (!posList.Any(p => p is not (PartOfSpeech.Name or PartOfSpeech.Unknown))) continue;
-                var forms = EnumerateCandidateForms(directWord, normalizedText, allowLooseLvmMatch: true,
-                                                    surface: wordData.wordInfo.Text);
+                bool isPosIncompat = matches.Count > 0 &&
+                                     !PosMapper.IsJmDictCompatibleWithSudachi(directWord.PartsOfSpeech, wordData.wordInfo.PartOfSpeech);
+                var forms = FormCandidateFactory.EnumerateCandidateForms(directWord, normalizedText, allowLooseLvmMatch: true,
+                                                                         surface: wordData.wordInfo.Text);
+                if (isPosIncompat)
+                    foreach (var f in forms)
+                        f.IsPosIncompatibleDirectSurface = true;
                 allFormCandidates.AddRange(forms);
             }
 
-            var bestPair = PickBestFormCandidate(allFormCandidates, wordData.wordInfo.Text,
-                                                 wordData.wordInfo.DictionaryForm, wordData.wordInfo.NormalizedForm, isNameContext: false,
-                                                 diagnostics,
-                                                 sudachiReading: wordData.wordInfo.Reading);
+            var (bestPair, margin) = PickBestFormCandidate(allFormCandidates, wordData.wordInfo.Text,
+                                                           wordData.wordInfo.DictionaryForm, wordData.wordInfo.NormalizedForm,
+                                                           isNameContext: wordData.wordInfo.IsPersonNameContext,
+                                                           diagnostics,
+                                                           sudachiReading: wordData.wordInfo.Reading);
 
             // Imperative disambiguation: godan imperative (行けよ→行く "go!") vs potential imperative
             // (行けよ→行ける "be able to go!"). The base verb is almost always correct in natural Japanese.
@@ -1520,33 +1610,45 @@ namespace Jiten.Parser
                 && wordData.wordInfo.NormalizedForm != wordData.wordInfo.DictionaryForm)
             {
                 var normalizedHira = KanaConverter.ToHiragana(wordData.wordInfo.NormalizedForm,
-                                                          convertLongVowelMark: false);
+                                                              convertLongVowelMark: false);
                 var normalizedFormHira = KanaNormalizer.Normalize(normalizedHira);
 
                 var baseVerbCandidate = allFormCandidates
-                    .Where(c => c.Form.Text == wordData.wordInfo.NormalizedForm
-                                || KanaNormalizer.Normalize(
-                                    KanaConverter.ToHiragana(c.Form.Text,
-                                                        convertLongVowelMark: false)) == normalizedFormHira)
-                    .OrderByDescending(c => c.TotalScore)
-                    .FirstOrDefault();
+                                        .Where(c => c.Form.Text == wordData.wordInfo.NormalizedForm
+                                                    || KanaNormalizer.Normalize(
+                                                                                KanaConverter.ToHiragana(c.Form.Text,
+                                                                                    convertLongVowelMark: false)) ==
+                                                    normalizedFormHira)
+                                        .OrderByDescending(c => ScoringPolicy.EffectiveScore(c))
+                                        .FirstOrDefault();
 
                 if (baseVerbCandidate != null)
+                {
                     bestPair = baseVerbCandidate;
+                    var bestAlternate = allFormCandidates
+                                        .Where(c => !c.IsPosIncompatibleDirectSurface && c.Word.WordId != bestPair.Word.WordId)
+                                        .OrderByDescending(c => ScoringPolicy.EffectiveScore(c))
+                                        .FirstOrDefault();
+                    margin = bestAlternate != null
+                        ? ScoringPolicy.EffectiveScore(bestPair) - ScoringPolicy.EffectiveScore(bestAlternate)
+                        : null;
+                }
             }
 
             if (bestPair == null)
-                return (false, null);
+                return (false, null, null);
 
             DeckWord deckWord = new()
                                 {
                                     WordId = bestPair.Word.WordId, OriginalText = wordData.wordInfo.Text,
                                     ReadingIndex = bestPair.ReadingIndex, Occurrences = wordData.occurrences,
-                                    Conjugations = bestPair.DeconjForm?.Process.ToList() ?? [],
+                                    Conjugations = bestPair.DeconjForm?.Process is ["casual kind request"] && bestPair.Word.PartsOfSpeech.Contains("adj-na")
+                                        ? []
+                                        : bestPair.DeconjForm?.Process.ToList() ?? [],
                                     PartsOfSpeech = bestPair.Word.PartsOfSpeech.ToPartOfSpeech(), Origin = bestPair.Word.Origin
                                 };
 
-            return (true, deckWord);
+            return (true, deckWord, margin);
         }
 
         public static async Task<List<DeckWord>> GetWordsDirectLookup(IDbContextFactory<JitenDbContext> contextFactory, List<string> words)
@@ -1616,19 +1718,21 @@ namespace Jiten.Parser
             return kanaForm != null ? WanaKana.ToKatakana(kanaForm.Text, new DefaultOptions { ConvertLongVowelMark = false }) : "";
         }
 
-        private static byte GetBestReadingIndex(JmDictWord word, string originalText)
+        private static byte GetBestReadingIndex(JmDictWord word, string originalText, string? sudachiReading = null)
         {
             if (word.Forms.Count == 0)
                 return 0;
 
             var targetHiragana = KanaConverter.ToHiragana(originalText, convertLongVowelMark: false);
-            var candidates = EnumerateCandidateForms(word, targetHiragana, allowLooseLvmMatch: true, surface: originalText);
+            var candidates =
+                FormCandidateFactory.EnumerateCandidateForms(word, targetHiragana, allowLooseLvmMatch: true, surface: originalText);
 
             if (candidates.Count == 0)
                 return 255;
 
-            var best = PickBestFormCandidate(candidates, originalText,
-                                             dictionaryForm: null, normalizedForm: null, isNameContext: false);
+            var (best, _) = PickBestFormCandidate(candidates, originalText,
+                                                  dictionaryForm: null, normalizedForm: null, isNameContext: false,
+                                                  sudachiReading: sudachiReading);
 
             return best?.ReadingIndex ?? 255;
         }
@@ -1675,7 +1779,7 @@ namespace Jiten.Parser
                                 if (hiraText != hiraDictForm)
                                 {
                                     var matchingForm = Deconjugator.Instance.Deconjugate(hiraText)
-                                        .FirstOrDefault(d => d.Text == hiraDictForm);
+                                                                   .FirstOrDefault(d => d.Text == hiraDictForm);
                                     if (matchingForm != null)
                                         conjugations = matchingForm.Process.ToList();
                                 }
@@ -1795,7 +1899,14 @@ namespace Jiten.Parser
                         continue;
 
                     if (singleKey.Length > 0 && (TryLongVowelLookup(singleKey) || TryDeconjugatedLongVowelLookup(singleKey)))
+                    {
+                        // Don't strip ー when a prior stage (e.g. CombinePrefixes) already set a
+                        // valid DictionaryForm for this token (e.g., 古くせー with DictForm 古くさい).
+                        if (!string.IsNullOrEmpty(word.DictionaryForm) && word.DictionaryForm != singleSurface
+                                                                       && TryLongVowelLookup(word.DictionaryForm))
+                            continue;
                         word.Text = singleKey;
+                    }
                 }
             }
         }
@@ -1854,7 +1965,7 @@ namespace Jiten.Parser
             try
             {
                 hira = KanaNormalizer.Normalize(
-                    KanaConverter.ToHiragana(stem, convertLongVowelMark: false));
+                                                KanaConverter.ToHiragana(stem, convertLongVowelMark: false));
             }
             catch
             {
@@ -2051,11 +2162,13 @@ namespace Jiten.Parser
                                         !(nextIsLongVowel && word.Text.Length == 1 && WanaKana.IsKana(word.Text)) &&
                                         !word.Text.EndsWith("ー");
 
+                    bool isSingleKanaStutter = !nextIsLongVowel && word.Text.Length == 1 && WanaKana.IsKana(word.Text);
                     if (shouldFilter ||
                         word.PartOfSpeech == PartOfSpeech.Noun && !nextIsLongVowel && (
-                            (word.Text.Length == 1 && WanaKana.IsKana(word.Text)) ||
+                            isSingleKanaStutter ||
                             word.Text is "エナ" or "えな"
-                        ))
+                        ) ||
+                        word.PartOfSpeech == PartOfSpeech.Symbol && isSingleKanaStutter)
                     {
                         sentence.Words.RemoveAt(i);
                     }
@@ -2063,109 +2176,11 @@ namespace Jiten.Parser
             }
         }
 
-        private static readonly HashSet<string> VerbOnlyAuxDictForms =
-        [
-            "られる", "れる", "せる", "させる",
-            "たい", "たがる",
-            "ます"
-        ];
-
-        private static readonly HashSet<string> VerbOrAdjAuxDictForms = ["た", "ぬ"];
-
-        private static void ValidateGrammaticalSequences(List<SentenceInfo> sentences)
+        private static void ValidateGrammaticalSequences(List<SentenceInfo> sentences,
+                                                         ParserDiagnostics? diagnostics = null)
         {
             foreach (var sentence in sentences)
-            {
-                // Phase 1: Remove verb-attaching auxiliaries at sentence start (always invalid —
-                // passive/causative/desire/polite/past/negative forms can never begin a clause)
-                while (sentence.Words.Count > 0)
-                {
-                    var first = sentence.Words[0].word;
-                    if (first.PartOfSpeech != PartOfSpeech.Auxiliary)
-                        break;
-
-                    var dict = first.DictionaryForm;
-                    if (VerbOnlyAuxDictForms.Contains(dict) ||
-                        VerbOrAdjAuxDictForms.Contains(dict))
-                    {
-                        sentence.Words.RemoveAt(0);
-                    }
-                    else
-                        break;
-                }
-
-                // Phase 2: Verb-attaching auxiliaries must follow a verb/adj/aux
-                for (int i = sentence.Words.Count - 1; i >= 1; i--)
-                {
-                    var word = sentence.Words[i].word;
-                    if (word.PartOfSpeech != PartOfSpeech.Auxiliary)
-                        continue;
-
-                    var dict = word.DictionaryForm;
-                    var prev = sentence.Words[i - 1].word;
-
-                    bool valid;
-                    if (VerbOnlyAuxDictForms.Contains(dict))
-                    {
-                        valid = prev.PartOfSpeech is PartOfSpeech.Verb or PartOfSpeech.Auxiliary;
-                    }
-                    else if (VerbOrAdjAuxDictForms.Contains(dict))
-                    {
-                        valid = prev.PartOfSpeech is PartOfSpeech.Verb or PartOfSpeech.Auxiliary
-                                                  or PartOfSpeech.IAdjective;
-                    }
-                    else
-                    {
-                        continue;
-                    }
-
-                    if (valid)
-                        continue;
-
-                    string merged = prev.Text + word.Text;
-                    if (HasLookup(merged))
-                    {
-                        var (prevWord, prevPos, prevLen) = sentence.Words[i - 1];
-                        var auxLen = sentence.Words[i].length;
-                        sentence.Words[i - 1] = (new WordInfo(prevWord)
-                        {
-                            Text = merged,
-                            DictionaryForm = merged,
-                            NormalizedForm = merged,
-                            PartOfSpeech = PartOfSpeech.Verb
-                        }, prevPos, prevLen + auxLen);
-                        sentence.Words.RemoveAt(i);
-                    }
-                    else
-                    {
-                        sentence.Words.RemoveAt(i);
-                    }
-                }
-
-                // Phase 3: Counter suffixes without a preceding number/noun → reclassify as Noun
-                for (int i = 0; i < sentence.Words.Count; i++)
-                {
-                    var word = sentence.Words[i].word;
-                    bool isCounter = word.PartOfSpeech == PartOfSpeech.Counter ||
-                                     (word.PartOfSpeech == PartOfSpeech.Suffix &&
-                                      word.HasPartOfSpeechSection(PartOfSpeechSection.Counter));
-                    if (!isCounter)
-                        continue;
-
-                    if (i == 0)
-                    {
-                        word.PartOfSpeech = PartOfSpeech.Noun;
-                        continue;
-                    }
-
-                    var prev = sentence.Words[i - 1].word;
-                    if (prev.PartOfSpeech is not (PartOfSpeech.Numeral or PartOfSpeech.Noun
-                        or PartOfSpeech.CommonNoun or PartOfSpeech.Pronoun or PartOfSpeech.Name))
-                    {
-                        word.PartOfSpeech = PartOfSpeech.Noun;
-                    }
-                }
-            }
+                TransitionRuleEngine.ApplyHardRules(sentence.Words, HasLookup, diagnostics);
         }
 
         /// <summary>
@@ -2223,6 +2238,11 @@ namespace Jiten.Parser
             'か', 'よ', 'ね', 'な', 'ぞ', 'ぜ', 'わ', 'さ', 'の', 'に', 'と', 'も', 'で', 'は', 'が'
         ];
 
+        private static readonly HashSet<char> DictionaryVerbEndings =
+        [
+            'く', 'ぐ', 'す', 'つ', 'ぬ', 'ぶ', 'む', 'う', 'る'
+        ];
+
         private static bool HasLookup(string text)
         {
             if (_lookups.TryGetValue(text, out var ids) && ids.Count > 0)
@@ -2233,11 +2253,14 @@ namespace Jiten.Parser
                 if (hira != text && _lookups.TryGetValue(hira, out ids) && ids.Count > 0)
                     return true;
             }
-            catch { }
+            catch
+            {
+            }
+
             return false;
         }
 
-        private static void SplitUnresolvableTokens(List<SentenceInfo> sentences)
+        private static void StripTrailingParticles(List<SentenceInfo> sentences)
         {
             foreach (var sentence in sentences)
             {
@@ -2251,17 +2274,9 @@ namespace Jiten.Parser
                         word.PartOfSpeech is PartOfSpeech.Particle or PartOfSpeech.Auxiliary or
                             PartOfSpeech.Verb or PartOfSpeech.IAdjective or PartOfSpeech.SupplementarySymbol or
                             PartOfSpeech.Symbol or PartOfSpeech.Conjunction or PartOfSpeech.Adnominal or
-                            PartOfSpeech.Prefix or PartOfSpeech.BlankSpace)
-                    {
-                        result.Add((word, position, length));
-                        continue;
-                    }
-
-                    bool isExpression = word.PartOfSpeech == PartOfSpeech.Expression;
-                    bool isNounLike = word.PartOfSpeech is PartOfSpeech.Noun or PartOfSpeech.Pronoun or
-                        PartOfSpeech.CommonNoun or PartOfSpeech.Unknown;
-
-                    if (!isExpression && !isNounLike)
+                            PartOfSpeech.Prefix or PartOfSpeech.BlankSpace or PartOfSpeech.Name or
+                            PartOfSpeech.Suffix or PartOfSpeech.NounSuffix or PartOfSpeech.Counter or
+                            PartOfSpeech.Numeral or PartOfSpeech.Filler)
                     {
                         result.Add((word, position, length));
                         continue;
@@ -2286,82 +2301,35 @@ namespace Jiten.Parser
 
                     var text = word.Text;
                     string textHira;
-                    try { textHira = KanaNormalizer.Normalize(KanaConverter.ToHiragana(text, convertLongVowelMark: false)); }
-                    catch { result.Add((word, position, length)); continue; }
+                    try
+                    {
+                        textHira = KanaNormalizer.Normalize(KanaConverter.ToHiragana(text, convertLongVowelMark: false));
+                    }
+                    catch
+                    {
+                        result.Add((word, position, length));
+                        continue;
+                    }
 
                     // Strategy 1a: Trailing particle strip (with lookup check on remainder)
                     char lastChar = textHira[^1];
                     bool hasTrailingParticle = textHira.Length >= 3 && TrailingParticles.Contains(lastChar);
-                    if (hasTrailingParticle && HasLookup(text[..^1]))
+                    bool remainderKnown = hasTrailingParticle && (HasLookup(text[..^1]) ||
+                                                                  Deconjugator.Instance.Deconjugate(textHira[..^1])
+                                                                              .Any(f => HasLookup(f.Text)));
+                    if (remainderKnown)
                     {
                         var remainder = text[..^1];
                         var particleStr = text[^1..];
                         result.Add((new WordInfo(word) { Text = remainder, DictionaryForm = remainder, NormalizedForm = remainder },
-                            position, length - 1));
+                                    position, length - 1));
                         result.Add((new WordInfo { Text = particleStr, DictionaryForm = particleStr, PartOfSpeech = PartOfSpeech.Particle },
-                            position + length - 1, 1));
+                                    position + length - 1, 1));
                         anySplit = true;
                         continue;
                     }
 
-                    // Strategy 2: Sliding-window decomposition
-                    var parts = new List<(string text, int offset)>();
-                    int pos = 0;
-                    bool fullyCovered = true;
-
-                    while (pos < text.Length)
-                    {
-                        int maxLen = Math.Min(10, text.Length - pos);
-                        bool found = false;
-
-                        for (int windowLen = maxLen; windowLen >= 1; windowLen--)
-                        {
-                            var window = text.Substring(pos, windowLen);
-                            if (HasLookup(window))
-                            {
-                                parts.Add((window, pos));
-                                pos += windowLen;
-                                found = true;
-                                break;
-                            }
-                        }
-
-                        if (!found)
-                        {
-                            fullyCovered = false;
-                            break;
-                        }
-                    }
-
-                    if (fullyCovered && parts.Count > 1)
-                    {
-                        foreach (var (partText, partOffset) in parts)
-                        {
-                            result.Add((new WordInfo(word)
-                            {
-                                Text = partText, DictionaryForm = partText, NormalizedForm = partText,
-                                PartOfSpeech = PartOfSpeech.Noun
-                            }, position + partOffset, partText.Length));
-                        }
-                        anySplit = true;
-                        continue;
-                    }
-
-                    // Strategy 1b: Trailing particle strip (last resort, no lookup check on remainder)
-                    if (hasTrailingParticle)
-                    {
-                        var remainder = text[..^1];
-                        var particleStr = text[^1..];
-                        result.Add((new WordInfo(word) { Text = remainder, DictionaryForm = remainder, NormalizedForm = remainder },
-                            position, length - 1));
-                        result.Add((new WordInfo { Text = particleStr, DictionaryForm = particleStr, PartOfSpeech = PartOfSpeech.Particle },
-                            position + length - 1, 1));
-                        anySplit = true;
-                    }
-                    else
-                    {
-                        result.Add((word, position, length));
-                    }
+                    result.Add((word, position, length));
                 }
 
                 if (anySplit)
@@ -2402,9 +2370,8 @@ namespace Jiten.Parser
                                 int combinedLength = length + sentence.Words[i + 1].length;
                                 var combinedWord = new WordInfo(word)
                                                    {
-                                                       Text = combinedText, DictionaryForm = combinedText,
-                                                       PartOfSpeech = PartOfSpeech.Noun, NormalizedForm = combinedText,
-                                                       Reading = KanaConverter.ToHiragana(combinedReading,
+                                                       Text = combinedText, DictionaryForm = combinedText, PartOfSpeech = PartOfSpeech.Noun,
+                                                       NormalizedForm = combinedText, Reading = KanaConverter.ToHiragana(combinedReading,
                                                            convertLongVowelMark: false),
                                                        PreMatchedWordId = null
                                                    };
@@ -2462,7 +2429,7 @@ namespace Jiten.Parser
 
                         // Also try hiragana version
                         var hiraganaText = KanaConverter.ToHiragana(combinedText,
-                                                               convertLongVowelMark: false);
+                                                                    convertLongVowelMark: false);
                         if (hiraganaText != combinedText &&
                             _lookups.TryGetValue(hiraganaText, out wordIds) && wordIds.Count > 0 &&
                             (hasNameLikeToken || !wordIds.All(id => _nameOnlyWordIds.Contains(id))))
@@ -2510,7 +2477,7 @@ namespace Jiten.Parser
                                                Text = combinedText, DictionaryForm = combinedText,
                                                PartOfSpeech = sentence.Words[i].word.PartOfSpeech, NormalizedForm = combinedText, Reading =
                                                    KanaConverter.ToHiragana(combinedReading,
-                                                                       convertLongVowelMark: false),
+                                                                            convertLongVowelMark: false),
                                                PreMatchedWordId = null
                                            };
 
@@ -2629,6 +2596,23 @@ namespace Jiten.Parser
                     result = await TryMatchCompoundWindow(wordInfos, wordIndex, lastConsumedIndex, intermediate);
                     if (result.HasValue) return result;
                 }
+
+                // Also try deconjugated base forms shorter than dictForm, ending in a verb ending.
+                // Handles e.g. しゃくれさせる (causative of v1 potential) → しゃくる (v5r base),
+                // allowing 顎をしゃくれさせる to match the expression 顎をしゃくる.
+                var shortBaseForms = new HashSet<string>(StringComparer.Ordinal);
+                foreach (var form in deconj)
+                {
+                    if (form.Text.Length >= 3 && form.Text.Length < dictForm.Length
+                                              && DictionaryVerbEndings.Contains(form.Text[^1]))
+                        shortBaseForms.Add(form.Text);
+                }
+
+                foreach (var shortForm in shortBaseForms.OrderByDescending(s => s.Length))
+                {
+                    result = await TryMatchCompoundWindow(wordInfos, wordIndex, lastConsumedIndex, shortForm);
+                    if (result.HasValue) return result;
+                }
             }
 
             // Fallback: try deconjugated forms for conjugated compound expressions
@@ -2708,7 +2692,9 @@ namespace Jiten.Parser
 
                 if (_lookups.TryGetValue(candidate, out var wordIds) && wordIds.Count > 0)
                 {
-                    var validWordId = await FindValidCompoundWordId(wordIds, expressionOnly, WanaKana.IsKana(candidate));
+                    var validWordId =
+                        await CompoundWordSelector.FindValidCompoundWordId(wordIds, JmDictCache, expressionOnly,
+                                                                           WanaKana.IsKana(candidate));
                     if (validWordId.HasValue)
                     {
                         lock (CompoundCacheLock)
@@ -2723,7 +2709,8 @@ namespace Jiten.Parser
                 var hiraganaCandidate = KanaConverter.ToHiragana(candidate, convertLongVowelMark: false);
                 if (hiraganaCandidate != candidate && _lookups.TryGetValue(hiraganaCandidate, out wordIds) && wordIds.Count > 0)
                 {
-                    var validWordId = await FindValidCompoundWordId(wordIds, expressionOnly, isKana: true);
+                    var validWordId =
+                        await CompoundWordSelector.FindValidCompoundWordId(wordIds, JmDictCache, expressionOnly, isKana: true);
                     if (validWordId.HasValue)
                     {
                         lock (CompoundCacheLock)
@@ -2744,143 +2731,9 @@ namespace Jiten.Parser
             return null;
         }
 
-        private static async Task<int?> FindValidCompoundWordId(List<int> wordIds, bool expressionOnly = false, bool isKana = true)
-        {
-            try
-            {
-                var wordCache = await JmDictCache.GetWordsAsync(wordIds);
-
-                // First pass: prefer Expression POS (e.g. そうする "to do so" over 奏する "to play music")
-                // When multiple expressions match (e.g. 異にする vs 事にする), pick the best by priority
-                int? bestExprWordId = null;
-                int bestExprScore = int.MinValue;
-                foreach (var wordId in wordIds)
-                {
-                    if (!wordCache.TryGetValue(wordId, out var word)) continue;
-
-                    var posList = word.PartsOfSpeech.ToPartOfSpeech();
-                    if (posList.Contains(PartOfSpeech.Expression))
-                    {
-                        int score = word.GetPriorityScore(isKana);
-                        if (score > bestExprScore || (score == bestExprScore && (bestExprWordId == null || wordId < bestExprWordId.Value)))
-                        {
-                            bestExprScore = score;
-                            bestExprWordId = wordId;
-                        }
-                    }
-                }
-
-                if (bestExprWordId.HasValue)
-                    return bestExprWordId;
-
-                if (expressionOnly) return null;
-
-                // Second pass: collect all valid compound candidates and pick best by priority
-                int? bestWordId = null;
-                int bestScore = int.MinValue;
-                foreach (var wordId in wordIds)
-                {
-                    if (!wordCache.TryGetValue(wordId, out var word)) continue;
-
-                    var posList = word.PartsOfSpeech.ToPartOfSpeech();
-                    if (posList.Any(PosMapper.IsValidCompoundPOS))
-                    {
-                        int score = word.GetPriorityScore(isKana);
-                        if (score > bestScore || (score == bestScore && (bestWordId == null || wordId < bestWordId.Value)))
-                        {
-                            bestScore = score;
-                            bestWordId = wordId;
-                        }
-                    }
-                }
-
-                return bestWordId;
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"[Warning] Error validating compound POS: {ex.Message}");
-            }
-
-            return null;
-        }
-
         #region Form-based pair scoring
 
-        private static List<FormCandidate> EnumerateCandidateForms(
-            JmDictWord word,
-            string targetHiragana,
-            bool allowLooseLvmMatch,
-            DeconjugationForm? deconjForm = null,
-            string? surface = null)
-        {
-            var candidates = new List<FormCandidate>();
-            var targetNormalized = KanaNormalizer.Normalize(targetHiragana);
-
-            foreach (var form in word.Forms)
-            {
-                if (form.ReadingIndex > 255)
-                    continue;
-
-                var formHiragana = KanaConverter.ToHiragana(form.Text, convertLongVowelMark: false);
-                var formNormalized = KanaNormalizer.Normalize(formHiragana);
-
-                bool phoneticMatch = formNormalized == targetNormalized;
-
-                if (!phoneticMatch && allowLooseLvmMatch)
-                {
-                    var targetLoose = KanaNormalizer.Normalize(KanaConverter.ToHiragana(targetHiragana));
-                    var formLoose = KanaNormalizer.Normalize(KanaConverter.ToHiragana(form.Text));
-                    phoneticMatch = formLoose == targetLoose;
-                }
-
-                if (!phoneticMatch)
-                    continue;
-
-                candidates.Add(new FormCandidate(word, form, (byte)form.ReadingIndex, targetHiragana, deconjForm));
-            }
-
-            // Per-word hard filters: drop search-only/obsolete forms only if non-search-only/non-obsolete alternatives exist
-            if (candidates.Count <= 1)
-                return candidates;
-
-            var nonSearchOnly = candidates.Where(c => !c.Form.IsSearchOnly || c.Form.Text == surface).ToList();
-            if (nonSearchOnly.Count > 0)
-                candidates = nonSearchOnly;
-
-            var nonObsolete = candidates.Where(c => !c.Form.IsObsolete || c.Form.Text == surface).ToList();
-            if (nonObsolete.Count > 0)
-                candidates = nonObsolete;
-
-            return candidates;
-        }
-
-        private static bool HasKanaReadingMatch(JmDictWord word, string sudachiReading, bool allowStemMatch = false)
-        {
-            var readingHiragana = KanaConverter.ToHiragana(sudachiReading, convertLongVowelMark: false);
-            return word.Forms
-                .Where(f => f.FormType == JmDictFormType.KanaForm)
-                .Any(f =>
-                {
-                    var formHiragana = KanaConverter.ToHiragana(f.Text, convertLongVowelMark: false);
-                    return formHiragana == readingHiragana ||
-                           (allowStemMatch && formHiragana.StartsWith(readingHiragana));
-                });
-        }
-
-        private static bool IsSuruNounWithoutExpression(IList<string> posTags)
-        {
-            bool hasNoun = false, hasSuru = false, hasExpression = false;
-            foreach (var tag in posTags)
-            {
-                if (tag is "n" or "n-adv" or "n-t") hasNoun = true;
-                else if (tag is "vs" or "vs-s" or "vs-i" or "vs-c") hasSuru = true;
-                else if (tag is "exp") hasExpression = true;
-            }
-
-            return hasNoun && hasSuru && !hasExpression;
-        }
-
-        private static FormCandidate? PickBestFormCandidate(
+        private static (FormCandidate? best, int? margin) PickBestFormCandidate(
             List<FormCandidate> allCandidates,
             string surface,
             string? dictionaryForm,
@@ -2890,28 +2743,29 @@ namespace Jiten.Parser
             string? sudachiReading = null)
         {
             var context = FormScoringContext.Create(
-                surface,
-                dictionaryForm,
-                normalizedForm,
-                isNameContext,
-                sudachiReading);
+                                                    surface,
+                                                    dictionaryForm,
+                                                    normalizedForm,
+                                                    isNameContext,
+                                                    sudachiReading);
 
-            return FormCandidateSelector.PickBestCandidate(allCandidates, context, ArchaicPosTypes, diagnostics);
+            var result = FormCandidateSelector.PickTopCandidates(allCandidates, context, ArchaicPosTypes, diagnostics);
+            return (result.Best, result.MarginToSecond);
         }
 
         #endregion
 
         #region Adjacent-word scoring
 
-        private static (string text, PartOfSpeech pos, string reading, bool isPersonNameContext, bool isNameLike)
+        private static (string text, PartOfSpeech pos, string dictionaryForm, string reading, bool isPersonNameContext, bool isNameLike)
             GetDedupKey(WordInfo wi) =>
-            (wi.Text, wi.PartOfSpeech, wi.Reading, wi.IsPersonNameContext,
-                PosMapper.IsNameLikeSudachiNoun(wi.PartOfSpeech, wi.PartOfSpeechSection1,
-                    wi.PartOfSpeechSection2, wi.PartOfSpeechSection3));
+            (wi.Text, wi.PartOfSpeech, wi.DictionaryForm, wi.Reading, wi.IsPersonNameContext,
+             PosMapper.IsNameLikeSudachiNoun(wi.PartOfSpeech, wi.PartOfSpeechSection1,
+                                             wi.PartOfSpeechSection2, wi.PartOfSpeechSection3));
 
-        private static DeckWord? LookupResult(
+        private static (DeckWord? word, int? margin) LookupResult(
             WordInfo wi,
-            Dictionary<(string, PartOfSpeech, string, bool, bool), DeckWord?> resultLookup)
+            Dictionary<(string, PartOfSpeech, string, string, bool, bool), (DeckWord? word, int? margin)> resultLookup)
         {
             var key = GetDedupKey(wi);
             resultLookup.TryGetValue(key, out var result);
@@ -2920,65 +2774,80 @@ namespace Jiten.Parser
 
         private static async Task<List<DeckWord>> ApplyAdjacentScoring(
             List<SentenceInfo> sentences,
-            List<DeckWord?> processedResults,
+            List<(DeckWord? word, int? margin)> processedResults,
             ParserDiagnostics? diagnostics = null)
         {
             int pos = 0;
             var sentencePairs = BuildSentencePairs(sentences, wi =>
-                pos < processedResults.Count ? processedResults[pos++] : null);
+                                                       pos < processedResults.Count ? processedResults[pos++] : (null, null));
             return await ApplyAdjacentScoringCore(sentencePairs, diagnostics);
         }
 
         private static async Task<List<DeckWord>> ApplyAdjacentScoring(
             List<SentenceInfo> sentences,
-            Dictionary<(string, PartOfSpeech, string, bool, bool), DeckWord?> resultLookup,
+            Dictionary<(string, PartOfSpeech, string, string, bool, bool), (DeckWord? word, int? margin)> resultLookup,
             ParserDiagnostics? diagnostics = null)
         {
             var sentencePairs = BuildSentencePairs(sentences, wi => LookupResult(wi, resultLookup));
             return await ApplyAdjacentScoringCore(sentencePairs, diagnostics);
         }
 
-        private static List<List<(WordInfo word, DeckWord? result)>> BuildSentencePairs(
+        private static List<List<(WordInfo word, DeckWord? result, int? margin)>> BuildSentencePairs(
             List<SentenceInfo> sentences,
-            Func<WordInfo, DeckWord?> lookupResult)
+            Func<WordInfo, (DeckWord? word, int? margin)> lookupResult)
         {
-            var result = new List<List<(WordInfo, DeckWord?)>>(sentences.Count);
+            var result = new List<List<(WordInfo, DeckWord?, int?)>>(sentences.Count);
             foreach (var sentence in sentences)
             {
                 var pairs = sentence.Words
-                    .Where(w => w.word.PartOfSpeech != PartOfSpeech.SupplementarySymbol)
-                    .Select(w => (w.word, lookupResult(w.word)))
-                    .ToList();
+                                    .Where(w => w.word.PartOfSpeech != PartOfSpeech.SupplementarySymbol)
+                                    .Select(w =>
+                                    {
+                                        var (word, margin) = lookupResult(w.word);
+                                        return (w.word, word, margin);
+                                    })
+                                    .ToList();
                 result.Add(pairs);
             }
+
             return result;
         }
 
         private static async Task<List<DeckWord>> ApplyAdjacentScoringCore(
-            List<List<(WordInfo word, DeckWord? result)>> sentencePairs,
+            List<List<(WordInfo word, DeckWord? result, int? margin)>> sentencePairs,
             ParserDiagnostics? diagnostics = null)
         {
             // Pass 1: identify tokens needing rederivation and collect all word IDs
             var allWordIds = new HashSet<int>();
-            var rederiveStates = new Dictionary<(int sentIdx, int tokIdx), RederiveState>();
+            var rederiveStates = new Dictionary<(int sentIdx, int tokIdx), RederivationHelper.RederiveState>();
 
             for (int si = 0; si < sentencePairs.Count; si++)
             {
                 var sentenceWords = sentencePairs[si];
+                bool isArchaicPass1 = IsClassicalSentence(sentenceWords);
                 for (int i = 0; i < sentenceWords.Count; i++)
                 {
-                    var (currentInfo, currentResult) = sentenceWords[i];
+                    var (currentInfo, currentResult, currentMargin) = sentenceWords[i];
                     if (currentResult == null) continue;
+
+                    // High confidence → skip rederivation, unless archaic sentence (Phase 1 scored without archaic context)
+                    if (!isArchaicPass1 && currentMargin >= ScoringPolicy.HighConfidenceThreshold) continue;
 
                     WordInfo? prevInfo = i > 0 ? sentenceWords[i - 1].word : null;
                     WordInfo? nextInfo = i < sentenceWords.Count - 1 ? sentenceWords[i + 1].word : null;
                     var prevResult = i > 0 ? sentenceWords[i - 1].result : null;
                     var nextResult = i < sentenceWords.Count - 1 ? sentenceWords[i + 1].result : null;
 
-                    if (!AdjacentWordScorer.HasApplicableRules(currentResult, currentInfo, prevResult, prevInfo, nextResult, nextInfo))
+                    // Low confidence → always rederive (bypass HasApplicableRules check)
+                    bool forceRederive = currentMargin.HasValue && currentMargin.Value < ScoringPolicy.LowConfidenceThreshold;
+
+                    if (!forceRederive && !isArchaicPass1 && !TransitionRuleEngine.CouldAnySoftRuleApply(
+                         currentResult.PartsOfSpeech, currentInfo.Text,
+                         prevResult?.PartsOfSpeech, prevInfo?.Text,
+                         nextResult?.PartsOfSpeech, nextInfo?.Text))
                         continue;
 
-                    var state = CollectRederivationIds(currentInfo);
+                    var state = RederivationHelper.CollectRederivationIds(currentInfo, _lookups, Deconjugator.Instance);
                     if (state == null) continue;
 
                     rederiveStates[(si, i)] = state;
@@ -3006,9 +2875,12 @@ namespace Jiten.Parser
             for (int si = 0; si < sentencePairs.Count; si++)
             {
                 var sentenceWords = sentencePairs[si];
+                bool isArchaicSentence = IsClassicalSentence(sentenceWords);
+                var resolvedResults = sentenceWords.Select(sw => sw.result).ToArray();
+
                 for (int i = 0; i < sentenceWords.Count; i++)
                 {
-                    var (currentInfo, currentResult) = sentenceWords[i];
+                    var (currentInfo, currentResult, _) = sentenceWords[i];
                     globalPos++;
 
                     if (currentResult == null)
@@ -3016,36 +2888,39 @@ namespace Jiten.Parser
 
                     if (!rederiveStates.TryGetValue((si, i), out var state))
                     {
+                        currentInfo.ResolvedWordId = currentResult.WordId;
                         corrected.Add(currentResult);
                         continue;
                     }
 
-                    var candidates = BuildCandidatesFromWords(state, wordCache);
+                    var candidates = RederivationHelper.BuildCandidatesFromWords(state, wordCache);
 
                     if (candidates.Count == 0)
                     {
+                        currentInfo.ResolvedWordId = currentResult.WordId;
                         corrected.Add(currentResult);
                         continue;
                     }
 
                     WordInfo? prevInfo = i > 0 ? sentenceWords[i - 1].word : null;
                     WordInfo? nextInfo = i < sentenceWords.Count - 1 ? sentenceWords[i + 1].word : null;
-                    var prevResult = i > 0 ? sentenceWords[i - 1].result : null;
+                    var prevResult = i > 0 ? resolvedResults[i - 1] : null;
                     var nextResult = i < sentenceWords.Count - 1 ? sentenceWords[i + 1].result : null;
 
                     var context = new AdjacentWordScorer.AdjacentContext(
-                        PrevResolvedPOS: prevResult?.PartsOfSpeech,
-                        NextResolvedPOS: nextResult?.PartsOfSpeech,
-                        PrevText: prevInfo?.Text,
-                        NextText: nextInfo?.Text,
-                        PrevWordId: prevResult?.WordId,
-                        NextWordId: nextResult?.WordId,
-                        IsSentenceInitial: i == 0,
-                        IsSentenceFinal: i == sentenceWords.Count - 1);
+                                                                         PrevResolvedPOS: prevResult?.PartsOfSpeech,
+                                                                         NextResolvedPOS: nextResult?.PartsOfSpeech,
+                                                                         PrevText: prevInfo?.Text,
+                                                                         NextText: nextInfo?.Text,
+                                                                         PrevWordId: prevResult?.WordId,
+                                                                         NextWordId: nextResult?.WordId,
+                                                                         IsSentenceInitial: i == 0,
+                                                                         IsSentenceFinal: i == sentenceWords.Count - 1);
 
                     var scoringContext = FormScoringContext.Create(
-                        currentInfo.Text, currentInfo.DictionaryForm, currentInfo.NormalizedForm,
-                        currentInfo.IsPersonNameContext, currentInfo.Reading);
+                                                                   currentInfo.Text, currentInfo.DictionaryForm, currentInfo.NormalizedForm,
+                                                                   currentInfo.IsPersonNameContext, currentInfo.Reading,
+                                                                   isArchaicSentence, isSentenceInitial: i == 0);
 
                     bool anyNonZeroBonus = false;
                     foreach (var candidate in candidates)
@@ -3057,31 +2932,29 @@ namespace Jiten.Parser
                         if (bonus != 0) anyNonZeroBonus = true;
                     }
 
+                    // Archaic sentence context changes base scores; if it would flip the winner, also re-select.
+                    if (!anyNonZeroBonus && isArchaicSentence)
+                    {
+                        var phase2Best = candidates.MaxBy(c => c.TotalScore);
+                        anyNonZeroBonus = phase2Best != null &&
+                                          (phase2Best.Word.WordId != currentResult.WordId ||
+                                           phase2Best.ReadingIndex != currentResult.ReadingIndex);
+                    }
+
                     if (!anyNonZeroBonus)
                     {
+                        currentInfo.ResolvedWordId = currentResult.WordId;
                         corrected.Add(currentResult);
                         continue;
                     }
 
-                    FormCandidate? newBest = null;
-                    int newBestAdjusted = int.MinValue;
-                    int newBestBonus = 0;
-                    List<string>? newBestRules = null;
-
-                    foreach (var candidate in candidates)
-                    {
-                        var (bonus, rulesMatched) = AdjacentWordScorer.CalculateContextBonus(candidate, context);
-                        int adjusted = candidate.TotalScore + bonus;
-
-                        if (adjusted > newBestAdjusted ||
-                            (adjusted == newBestAdjusted && newBest != null && candidate.Word.WordId < newBest.Word.WordId))
-                        {
-                            newBestAdjusted = adjusted;
-                            newBest = candidate;
-                            newBestBonus = bonus;
-                            newBestRules = rulesMatched;
-                        }
-                    }
+                    var newBest = FormCandidateSelector.PickTopCandidatesWithBonus(candidates,
+                                                                                   c => AdjacentWordScorer.CalculateContextBonus(c, context)
+                                                                                       .bonus);
+                    var (newBestBonus, newBestRules) = newBest != null
+                        ? AdjacentWordScorer.CalculateContextBonus(newBest, context)
+                        : (0, null);
+                    int newBestAdjusted = newBest != null ? ScoringPolicy.EffectiveScore(newBest) + newBestBonus : int.MinValue;
 
                     bool changed = newBest != null &&
                                    (newBest.Word.WordId != currentResult.WordId || newBest.ReadingIndex != currentResult.ReadingIndex);
@@ -3089,52 +2962,62 @@ namespace Jiten.Parser
                     if (diagnostics != null && newBest != null && newBestRules is { Count: > 0 })
                     {
                         var firstPassScore = candidates.FirstOrDefault(c =>
-                            c.Word.WordId == currentResult.WordId && c.ReadingIndex == currentResult.ReadingIndex)?.TotalScore ?? 0;
+                                                                           c.Word.WordId == currentResult.WordId &&
+                                                                           c.ReadingIndex == currentResult.ReadingIndex)?.TotalScore ?? 0;
 
                         diagnostics.AdjacentScoring.Add(new AdjacentScoringEntry
-                        {
-                            Position = globalPos - 1,
-                            Surface = currentInfo.Text,
-                            LeftContext = prevInfo != null ? new AdjacentTokenInfo { Text = prevInfo.Text, Pos = prevInfo.PartOfSpeech } : null,
-                            RightContext = nextInfo != null ? new AdjacentTokenInfo { Text = nextInfo.Text, Pos = nextInfo.PartOfSpeech } : null,
-                            RulesMatched = newBestRules,
-                            FirstPassWinner = new AdjacentCandidateInfo
-                            {
-                                WordId = currentResult.WordId,
-                                ReadingIndex = currentResult.ReadingIndex,
-                                Score = firstPassScore,
-                                ContextBonus = 0,
-                                AdjustedScore = firstPassScore
-                            },
-                            AdjustedWinner = new AdjacentCandidateInfo
-                            {
-                                WordId = newBest.Word.WordId,
-                                ReadingIndex = newBest.ReadingIndex,
-                                Score = newBest.TotalScore,
-                                ContextBonus = newBestBonus,
-                                AdjustedScore = newBestAdjusted
-                            },
-                            Changed = changed
-                        });
+                                                        {
+                                                            Position = globalPos - 1, Surface = currentInfo.Text,
+                                                            LeftContext = prevInfo != null
+                                                                ? new AdjacentTokenInfo
+                                                                  {
+                                                                      Text = prevInfo.Text, Pos = prevInfo.PartOfSpeech
+                                                                  }
+                                                                : null,
+                                                            RightContext = nextInfo != null
+                                                                ? new AdjacentTokenInfo
+                                                                  {
+                                                                      Text = nextInfo.Text, Pos = nextInfo.PartOfSpeech
+                                                                  }
+                                                                : null,
+                                                            RulesMatched = newBestRules,
+                                                            FirstPassWinner = new AdjacentCandidateInfo
+                                                                              {
+                                                                                  WordId = currentResult.WordId,
+                                                                                  ReadingIndex = currentResult.ReadingIndex,
+                                                                                  Score = firstPassScore, ContextBonus = 0,
+                                                                                  AdjustedScore = firstPassScore
+                                                                              },
+                                                            AdjustedWinner = new AdjacentCandidateInfo
+                                                                             {
+                                                                                 WordId = newBest.Word.WordId,
+                                                                                 ReadingIndex = newBest.ReadingIndex,
+                                                                                 Score = newBest.TotalScore, ContextBonus = newBestBonus,
+                                                                                 AdjustedScore = newBestAdjusted
+                                                                             },
+                                                            Changed = changed
+                                                        });
                     }
 
                     if (changed && newBest != null)
                     {
-                        corrected.Add(new DeckWord
-                        {
-                            WordId = newBest.Word.WordId,
-                            OriginalText = currentInfo.Text,
-                            ReadingIndex = newBest.ReadingIndex,
-                            Occurrences = currentResult.Occurrences,
-                            Conjugations = newBest.DeconjForm?.Process.ToList() ?? currentResult.Conjugations,
-                            PartsOfSpeech = newBest.Word.PartsOfSpeech.ToPartOfSpeech(),
-                            Origin = newBest.Word.Origin,
-                            SudachiReading = currentInfo.Reading,
-                            SudachiPartOfSpeech = currentInfo.PartOfSpeech
-                        });
+                        var newResult = new DeckWord
+                                        {
+                                            WordId = newBest.Word.WordId, OriginalText = currentInfo.Text,
+                                            ReadingIndex = newBest.ReadingIndex, Occurrences = currentResult.Occurrences,
+                                            Conjugations = newBest.DeconjForm?.Process is ["casual kind request"] && newBest.Word.PartsOfSpeech.Contains("adj-na")
+                                                ? []
+                                                : newBest.DeconjForm?.Process.ToList() ?? currentResult.Conjugations,
+                                            PartsOfSpeech = newBest.Word.PartsOfSpeech.ToPartOfSpeech(), Origin = newBest.Word.Origin,
+                                            SudachiReading = currentInfo.Reading, SudachiPartOfSpeech = currentInfo.PartOfSpeech
+                                        };
+                        currentInfo.ResolvedWordId = newBest.Word.WordId;
+                        corrected.Add(newResult);
+                        resolvedResults[i] = newResult;
                     }
                     else
                     {
+                        currentInfo.ResolvedWordId = currentResult.WordId;
                         corrected.Add(currentResult);
                     }
                 }
@@ -3143,136 +3026,50 @@ namespace Jiten.Parser
             return corrected;
         }
 
-        private sealed class RederiveState
+        #endregion
+
+        #region Confidence resegmentation helpers
+
+        private static Dictionary<(int sentenceIndex, int wordIndex), int?> BuildMarginMap(
+            List<SentenceInfo> sentences,
+            List<(DeckWord? word, int? margin)> processedWithMargins)
         {
-            public required WordInfo WordInfo;
-            public required string Text;
-            public required string TextInHiragana;
-            public List<int>? DirectIds;
-            public List<int>? HiraganaIds;
-            public required List<int> CandidateIds;
-            public List<(DeconjugationForm form, List<int> ids)>? DeconjMatches;
-            public bool IsVerbPath;
+            var map = new Dictionary<(int, int), int?>();
+            int flatIndex = 0;
+            for (int si = 0; si < sentences.Count; si++)
+            {
+                for (int wi = 0; wi < sentences[si].Words.Count; wi++)
+                {
+                    if (sentences[si].Words[wi].word.PartOfSpeech == PartOfSpeech.SupplementarySymbol)
+                        continue;
+                    if (flatIndex < processedWithMargins.Count)
+                        map[(si, wi)] = processedWithMargins[flatIndex].margin;
+                    flatIndex++;
+                }
+            }
+
+            return map;
         }
 
-        private static RederiveState? CollectRederivationIds(WordInfo wordInfo)
+        private static Dictionary<(int sentenceIndex, int wordIndex), int?> BuildMarginMapFromLookup(
+            List<SentenceInfo> sentences,
+            Dictionary<(string, PartOfSpeech, string, string, bool, bool), (DeckWord? word, int? margin)> resultLookup)
         {
-            var text = wordInfo.Text;
-            var textInHiragana = KanaConverter.ToHiragana(text, convertLongVowelMark: false);
-
-            _lookups.TryGetValue(text, out List<int>? directIds);
-            _lookups.TryGetValue(textInHiragana, out var hiraganaIds);
-
-            var candidateIds = new List<int>();
-            if (directIds != null) candidateIds.AddRange(directIds);
-            if (hiraganaIds != null) candidateIds.AddRange(hiraganaIds);
-
-            var textNormalized = KanaNormalizer.Normalize(textInHiragana);
-            if (textNormalized != textInHiragana)
+            var map = new Dictionary<(int, int), int?>();
+            for (int si = 0; si < sentences.Count; si++)
             {
-                _lookups.TryGetValue(textNormalized, out List<int>? normalizedIds);
-                if (normalizedIds != null) candidateIds.AddRange(normalizedIds);
+                for (int wi = 0; wi < sentences[si].Words.Count; wi++)
+                {
+                    var word = sentences[si].Words[wi].word;
+                    if (word.PartOfSpeech == PartOfSpeech.SupplementarySymbol)
+                        continue;
+                    var key = GetDedupKey(word);
+                    if (resultLookup.TryGetValue(key, out var result))
+                        map[(si, wi)] = result.margin;
+                }
             }
 
-            candidateIds = candidateIds.Distinct().ToList();
-
-            if (wordInfo.PartOfSpeech is PartOfSpeech.Verb or PartOfSpeech.IAdjective or PartOfSpeech.Auxiliary
-                or PartOfSpeech.NaAdjective or PartOfSpeech.Expression)
-            {
-                var normalizedText = KanaNormalizer.Normalize(KanaConverter.ToHiragana(text));
-                var deconjugated = Deconjugator.Instance.Deconjugate(normalizedText)
-                    .OrderByDescending(d => d.Text.Length).ToList();
-
-                var deconjIds = new List<int>();
-                var deconjMatches = new List<(DeconjugationForm form, List<int> ids)>();
-
-                foreach (var form in deconjugated)
-                {
-                    if (_lookups.TryGetValue(form.Text, out List<int>? lookup))
-                    {
-                        deconjIds.AddRange(lookup);
-                        deconjMatches.Add((form, lookup));
-                    }
-                }
-
-                candidateIds.AddRange(deconjIds);
-                candidateIds = candidateIds.Distinct().ToList();
-
-                if (candidateIds.Count == 0)
-                    return null;
-
-                return new RederiveState
-                {
-                    WordInfo = wordInfo, Text = text, TextInHiragana = textInHiragana,
-                    DirectIds = directIds, HiraganaIds = hiraganaIds,
-                    CandidateIds = candidateIds, DeconjMatches = deconjMatches, IsVerbPath = true
-                };
-            }
-
-            if (candidateIds.Count == 0)
-                return null;
-
-            return new RederiveState
-            {
-                WordInfo = wordInfo, Text = text, TextInHiragana = textInHiragana,
-                DirectIds = directIds, HiraganaIds = hiraganaIds,
-                CandidateIds = candidateIds, IsVerbPath = false
-            };
-        }
-
-        private static List<FormCandidate> BuildCandidatesFromWords(RederiveState state, Dictionary<int, JmDictWord> wordCache)
-        {
-            var allCandidates = new List<FormCandidate>();
-
-            if (state.IsVerbPath)
-            {
-                foreach (var match in state.DeconjMatches!)
-                {
-                    foreach (var id in match.ids)
-                    {
-                        if (!wordCache.TryGetValue(id, out var word)) continue;
-                        if (!PosMapper.IsJmDictCompatibleWithSudachi(word.PartsOfSpeech, state.WordInfo.PartOfSpeech))
-                            continue;
-
-                        var formPosTags = PosMapper.GetValidatableDeconjTags(match.form.Tags).ToList();
-                        if (formPosTags.Count > 0 && !PosMapper.AreDeconjTagsCompatibleWithJmDict(formPosTags, word.PartsOfSpeech))
-                            continue;
-
-                        var forms = EnumerateCandidateForms(word, match.form.Text,
-                            allowLooseLvmMatch: true, deconjForm: match.form, surface: state.Text);
-                        allCandidates.AddRange(forms);
-                    }
-                }
-
-                foreach (var id in state.DirectIds ?? [])
-                {
-                    if (!wordCache.TryGetValue(id, out var word)) continue;
-                    var forms = EnumerateCandidateForms(word, state.TextInHiragana, allowLooseLvmMatch: true, surface: state.Text);
-                    allCandidates.AddRange(forms);
-                }
-
-                foreach (var id in state.HiraganaIds ?? [])
-                {
-                    if (state.DirectIds?.Contains(id) == true) continue;
-                    if (!wordCache.TryGetValue(id, out var word)) continue;
-                    var forms = EnumerateCandidateForms(word, state.TextInHiragana, allowLooseLvmMatch: true, surface: state.Text);
-                    allCandidates.AddRange(forms);
-                }
-
-                return allCandidates;
-            }
-
-            foreach (var id in state.CandidateIds)
-            {
-                if (!wordCache.TryGetValue(id, out var word)) continue;
-                if (!PosMapper.IsJmDictCompatibleWithSudachi(word.PartsOfSpeech, state.WordInfo.PartOfSpeech))
-                    continue;
-
-                var forms = EnumerateCandidateForms(word, state.TextInHiragana, allowLooseLvmMatch: true, surface: state.Text);
-                allCandidates.AddRange(forms);
-            }
-
-            return allCandidates;
+            return map;
         }
 
         #endregion

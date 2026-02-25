@@ -160,42 +160,61 @@ public static class ExampleSentenceExtractor
                     int matchIndex = -1;
                     int fallbackIndex = -1;
                     int posMatchNoReading = -1;
-                    for (int j = 0; j < wordList.Count; j++)
+
+                    // Priority 0: exact WordId match from parser resolution — avoids assigning
+                    // an example sentence to a wrong DeckWord when the same surface text resolved
+                    // to different WordIds in different sentences (e.g. さっき → 1005180 vs misparse 1299060).
+                    if (wordInfo.ResolvedWordId.HasValue)
                     {
-                        if (IsPosMatch(wordList[j], wordInfo))
+                        for (int j = 0; j < wordList.Count; j++)
                         {
-                            if (!string.IsNullOrEmpty(wordInfo.Reading) &&
-                                !string.IsNullOrEmpty(wordList[j].SudachiReading) &&
-                                wordList[j].SudachiReading == wordInfo.Reading)
+                            if (wordList[j].WordId == wordInfo.ResolvedWordId.Value && IsPosMatch(wordList[j], wordInfo))
                             {
                                 matchIndex = j;
                                 break;
                             }
+                        }
+                    }
 
-                            if (posMatchNoReading == -1)
-                                posMatchNoReading = j;
+                    if (matchIndex == -1)
+                    {
+                        for (int j = 0; j < wordList.Count; j++)
+                        {
+                            if (IsPosMatch(wordList[j], wordInfo))
+                            {
+                                if (!string.IsNullOrEmpty(wordInfo.Reading) &&
+                                    !string.IsNullOrEmpty(wordList[j].SudachiReading) &&
+                                    wordList[j].SudachiReading == wordInfo.Reading)
+                                {
+                                    matchIndex = j;
+                                    break;
+                                }
+
+                                if (posMatchNoReading == -1)
+                                    posMatchNoReading = j;
+                            }
+
+                            if (fallbackIndex == -1 && IsPosCompatible(wordList[j], wordInfo))
+                                fallbackIndex = j;
                         }
 
-                        if (fallbackIndex == -1 && IsPosCompatible(wordList[j], wordInfo))
-                            fallbackIndex = j;
-                    }
+                        if (matchIndex == -1 && posMatchNoReading >= 0)
+                        {
+                            var fallbackWord = wordList[posMatchNoReading];
+                            bool readingConflict = !string.IsNullOrEmpty(wordInfo.Reading) &&
+                                                   (string.IsNullOrEmpty(fallbackWord.SudachiReading) ||
+                                                    fallbackWord.SudachiReading != wordInfo.Reading);
+                            if (!readingConflict)
+                                matchIndex = posMatchNoReading;
+                        }
 
-                    if (matchIndex == -1 && posMatchNoReading >= 0)
-                    {
-                        var fallbackWord = wordList[posMatchNoReading];
-                        bool readingConflict = !string.IsNullOrEmpty(wordInfo.Reading) &&
-                                               (string.IsNullOrEmpty(fallbackWord.SudachiReading) ||
-                                                fallbackWord.SudachiReading != wordInfo.Reading);
-                        if (!readingConflict)
-                            matchIndex = posMatchNoReading;
+                        // Only use the name-like fallback when either:
+                        // - this surface text has no competing non-Name DeckWord (pure name word), OR
+                        // - the token is in person name context (followed by さん/くん/etc.)
+                        if (matchIndex == -1 &&
+                            (!textsWithNonNameEntry.Contains(wordInfo.Text) || wordInfo.IsPersonNameContext))
+                            matchIndex = fallbackIndex;
                     }
-
-                    // Only use the name-like fallback when either:
-                    // - this surface text has no competing non-Name DeckWord (pure name word), OR
-                    // - the token is in person name context (followed by さん/くん/etc.)
-                    if (matchIndex == -1 &&
-                        (!textsWithNonNameEntry.Contains(wordInfo.Text) || wordInfo.IsPersonNameContext))
-                        matchIndex = fallbackIndex;
 
                     // If we found a match, add it and remove from the list
                     if (matchIndex >= 0)

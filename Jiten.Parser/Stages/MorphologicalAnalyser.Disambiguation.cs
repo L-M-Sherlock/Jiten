@@ -148,6 +148,12 @@ public partial class MorphologicalAnalyser
             if (word is { Text: "隙", Reading: "ヒマ" })
                 word.Reading = "スキ";
 
+            // 事 (ジ) → コト when Sudachi misclassified as suffix after verb/expression
+            // ジ reading only occurs in kango compounds (仕事, 用事, 無事); those are parsed as single tokens.
+            // When 事 is orphaned (after a non-noun), it is the nominalizer こと.
+            if (word is { Text: "事", Reading: "ジ", WasReclassifiedFromSuffix: true })
+                word.Reading = "コト";
+
             // たった in time-elapsed context → 経つ (1251100), not 断つ/立つ.
             // When preceded by a time-unit noun (年/月/日/週/間), the intended meaning is
             // "X time has passed" (経つ), not "to cut" (断つ) or "to stand" (立つ).
