@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using Jiten.Core;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -12,9 +13,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Jiten.Core.Migrations
 {
     [DbContext(typeof(JitenDbContext))]
-    partial class JitenDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260218192013_AddMediaRequests")]
+    partial class AddMediaRequests
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -801,9 +804,6 @@ namespace Jiten.Core.Migrations
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)");
 
-                    b.Property<DateTime?>("CompletedAt")
-                        .HasColumnType("timestamp with time zone");
-
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -931,67 +931,6 @@ namespace Jiten.Core.Migrations
                     b.ToTable("MediaRequestSubscriptions", "jiten");
                 });
 
-            modelBuilder.Entity("Jiten.Core.Data.MediaRequestUpload", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
-
-                    b.Property<string>("AdminNote")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
-
-                    b.Property<bool>("AdminReviewed")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("boolean")
-                        .HasDefaultValue(false);
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<bool>("FileDeleted")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("boolean")
-                        .HasDefaultValue(false);
-
-                    b.Property<string>("FileName")
-                        .IsRequired()
-                        .HasMaxLength(255)
-                        .HasColumnType("character varying(255)");
-
-                    b.Property<long>("FileSize")
-                        .HasColumnType("bigint");
-
-                    b.Property<int>("MediaRequestCommentId")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("MediaRequestId")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("OriginalFileCount")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
-                        .HasDefaultValue(1);
-
-                    b.Property<string>("StoragePath")
-                        .IsRequired()
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("MediaRequestCommentId")
-                        .IsUnique()
-                        .HasDatabaseName("IX_MediaRequestUpload_CommentId");
-
-                    b.HasIndex("MediaRequestId")
-                        .HasDatabaseName("IX_MediaRequestUpload_RequestId");
-
-                    b.ToTable("MediaRequestUploads", "jiten");
-                });
-
             modelBuilder.Entity("Jiten.Core.Data.MediaRequestUpvote", b =>
                 {
                     b.Property<int>("Id")
@@ -1018,59 +957,6 @@ namespace Jiten.Core.Migrations
                         .HasDatabaseName("IX_MediaRequestUpvote_RequestId_UserId");
 
                     b.ToTable("MediaRequestUpvotes", "jiten");
-                });
-
-            modelBuilder.Entity("Jiten.Core.Data.Notification", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<bool>("IsRead")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("boolean")
-                        .HasDefaultValue(false);
-
-                    b.Property<string>("LinkUrl")
-                        .HasMaxLength(300)
-                        .HasColumnType("character varying(300)");
-
-                    b.Property<string>("Message")
-                        .IsRequired()
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
-
-                    b.Property<DateTime?>("ReadAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("Title")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
-                    b.Property<int>("Type")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("UserId")
-                        .IsRequired()
-                        .HasMaxLength(36)
-                        .HasColumnType("character varying(36)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("CreatedAt")
-                        .HasDatabaseName("IX_Notification_CreatedAt");
-
-                    b.HasIndex("UserId", "IsRead", "CreatedAt")
-                        .IsDescending(false, false, true)
-                        .HasDatabaseName("IX_Notification_UserId_IsRead_CreatedAt");
-
-                    b.ToTable("Notifications", "jiten");
                 });
 
             modelBuilder.Entity("Jiten.Core.Data.RequestActivityLog", b =>
@@ -1456,25 +1342,6 @@ namespace Jiten.Core.Migrations
                     b.Navigation("MediaRequest");
                 });
 
-            modelBuilder.Entity("Jiten.Core.Data.MediaRequestUpload", b =>
-                {
-                    b.HasOne("Jiten.Core.Data.MediaRequestComment", "Comment")
-                        .WithOne("Upload")
-                        .HasForeignKey("Jiten.Core.Data.MediaRequestUpload", "MediaRequestCommentId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("Jiten.Core.Data.MediaRequest", "MediaRequest")
-                        .WithMany("Uploads")
-                        .HasForeignKey("MediaRequestId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Comment");
-
-                    b.Navigation("MediaRequest");
-                });
-
             modelBuilder.Entity("Jiten.Core.Data.MediaRequestUpvote", b =>
                 {
                     b.HasOne("Jiten.Core.Data.MediaRequest", "MediaRequest")
@@ -1549,14 +1416,7 @@ namespace Jiten.Core.Migrations
 
                     b.Navigation("Subscriptions");
 
-                    b.Navigation("Uploads");
-
                     b.Navigation("Upvotes");
-                });
-
-            modelBuilder.Entity("Jiten.Core.Data.MediaRequestComment", b =>
-                {
-                    b.Navigation("Upload");
                 });
 
             modelBuilder.Entity("Jiten.Core.Data.Tag", b =>
