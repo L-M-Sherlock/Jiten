@@ -1138,11 +1138,7 @@ public partial class RequestController(
             JsonSerializer.Serialize(new { uploadId, upload.FileName }),
             ipAddress: HttpContext.Connection.RemoteIpAddress?.ToString());
 
-        var parentComment = upload.Comment;
-        context.MediaRequestUploads.Remove(upload);
-
-        if (parentComment != null && string.IsNullOrWhiteSpace(parentComment.Text))
-            context.MediaRequestComments.Remove(parentComment);
+        upload.FileDeleted = true;
 
         await context.SaveChangesAsync();
 
@@ -1161,6 +1157,7 @@ public partial class RequestController(
             return Results.Unauthorized();
 
         var upload = await context.MediaRequestUploads
+            .Include(u => u.Comment)
             .FirstOrDefaultAsync(u => u.Id == uploadId && u.MediaRequestId == id);
 
         if (upload == null)
@@ -1168,6 +1165,16 @@ public partial class RequestController(
 
         upload.AdminReviewed = model.AdminReviewed;
         upload.AdminNote = model.AdminNote;
+
+        var uploaderUserId = upload.Comment?.UserId;
+        if (uploaderUserId != null)
+        {
+            var action = model.AdminReviewed ? RequestAction.ContributionValidated : RequestAction.ContributionRevoked;
+            activityService.LogWithoutSave(id, userId, action,
+                JsonSerializer.Serialize(new { uploadId, upload.FileName }),
+                targetUserId: uploaderUserId,
+                ipAddress: HttpContext.Connection.RemoteIpAddress?.ToString());
+        }
 
         await context.SaveChangesAsync();
 

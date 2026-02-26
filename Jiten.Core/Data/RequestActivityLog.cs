@@ -34,4 +34,7 @@ public enum RequestAction
     StatusChangedToOpen = 43,
 
     RequestEditedByAdmin = 50,
+
+    ContributionValidated = 60,
+    ContributionRevoked = 61,
 }

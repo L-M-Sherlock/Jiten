@@ -46,6 +46,7 @@ const showAdminPanel = ref(false);
 const adminNote = ref('');
 const fulfilledDeckId = ref<number | null>(null);
 const isUpdatingStatus = ref(false);
+const reviewingUploadId = ref<number | null>(null);
 
 // Admin edit fields
 const editTitle = ref('');
@@ -265,15 +266,20 @@ async function handleSaveEdit() {
 }
 
 async function handleAdminReviewUpload(uploadId: number, reviewed: boolean) {
-  if (!request.value) return;
+  if (!request.value || reviewingUploadId.value !== null) return;
+  reviewingUploadId.value = uploadId;
   const success = await reviewUpload(request.value.id, uploadId, reviewed);
   if (success) {
     toast.add({ severity: 'success', summary: reviewed ? 'Marked as reviewed' : 'Unmarked', life: 3000 });
-    comments.value = await fetchComments(request.value.id);
+    const comment = comments.value.find(c => c.upload?.id === uploadId);
+    if (comment?.upload) {
+      (comment.upload as any).adminReviewed = reviewed;
+    }
   } else {
     const detail = extractApiError(apiError.value, 'Failed to update review status.');
     toast.add({ severity: 'error', summary: 'Failed to update review status', detail, life: 5000 });
   }
+  reviewingUploadId.value = null;
 }
 
 const commentsWithUploads = computed(() =>
@@ -549,6 +555,8 @@ onMounted(() => loadData());
                       severity="success"
                       text
                       size="small"
+                      :loading="reviewingUploadId === comment.upload!.id"
+                      :disabled="reviewingUploadId !== null"
                       @click="handleAdminReviewUpload(comment.upload!.id, true)"
                     />
                     <Button
@@ -558,6 +566,8 @@ onMounted(() => loadData());
                       severity="secondary"
                       text
                       size="small"
+                      :loading="reviewingUploadId === comment.upload!.id"
+                      :disabled="reviewingUploadId !== null"
                       @click="handleAdminReviewUpload(comment.upload!.id, false)"
                     />
                   </div>

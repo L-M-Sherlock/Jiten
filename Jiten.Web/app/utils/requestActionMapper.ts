@@ -16,6 +16,8 @@ export function getRequestActionText(action: RequestAction): string {
     case RequestAction.StatusChangedToRejected: return 'Rejected';
     case RequestAction.StatusChangedToOpen: return 'Reopened';
     case RequestAction.RequestEditedByAdmin: return 'Edited by admin';
+    case RequestAction.ContributionValidated: return 'Contribution validated';
+    case RequestAction.ContributionRevoked: return 'Contribution revoked';
     default: return 'Unknown action';
   }
 }
@@ -36,6 +38,8 @@ export function getRequestActionIcon(action: RequestAction): string {
     case RequestAction.StatusChangedToRejected: return 'pi pi-times-circle';
     case RequestAction.StatusChangedToOpen: return 'pi pi-replay';
     case RequestAction.RequestEditedByAdmin: return 'pi pi-pencil';
+    case RequestAction.ContributionValidated: return 'pi pi-verified';
+    case RequestAction.ContributionRevoked: return 'pi pi-ban';
     default: return 'pi pi-question-circle';
   }
 }
@@ -56,6 +60,8 @@ export function getRequestActionSeverity(action: RequestAction): 'info' | 'warn'
     case RequestAction.StatusChangedToRejected: return 'danger';
     case RequestAction.StatusChangedToOpen: return 'info';
     case RequestAction.RequestEditedByAdmin: return 'warn';
+    case RequestAction.ContributionValidated: return 'success';
+    case RequestAction.ContributionRevoked: return 'danger';
     default: return 'secondary';
   }
 }
