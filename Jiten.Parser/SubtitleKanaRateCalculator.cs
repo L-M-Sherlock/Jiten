@@ -83,6 +83,8 @@ public static class SubtitleKanaRateCalculator
         var count = 0;
         foreach (var rune in reading.EnumerateRunes())
         {
+            if (IsSokuon(rune))
+                continue;
             if (IsKana(rune))
                 count++;
         }
@@ -94,6 +96,11 @@ public static class SubtitleKanaRateCalculator
     {
         return rune.Value is >= 0x3040 and <= 0x309F
             || rune.Value is >= 0x30A0 and <= 0x30FF;
+    }
+
+    private static bool IsSokuon(Rune rune)
+    {
+        return rune.Value is 0x3063 or 0x30C3;
     }
 
     private static List<(int start, int end)> MergeIntervals(List<(int start, int end)> intervals)
