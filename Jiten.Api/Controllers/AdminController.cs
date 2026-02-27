@@ -585,36 +585,45 @@ public partial class AdminController(
             await file.CopyToAsync(stream);
             stream.Close();
 
-            SubtitleMoraStats stats = SubtitleMoraStats.Empty;
-            string text = "";
-
-            if (fileExtension is ".ass" or ".srt" or ".ssa")
-            {
-                var extractor = new SubtitleExtractor();
-                text = await extractor.Extract(filePath);
-                var items = await extractor.ExtractItems(filePath);
-                if (items.Count > 0)
-                    stats = await SubtitleMoraRateCalculator.ComputeAsync(items);
-            }
-            else if (fileExtension == ".epub")
-            {
-                text = await new EbookExtractor().ExtractTextFromEbook(filePath);
-            }
-            else if (fileExtension == ".mokuro")
-            {
-                text = await new MokuroExtractor().Extract(filePath, false);
-            }
-            else
-            {
-                text = await System.IO.File.ReadAllTextAsync(filePath);
-            }
+            var text = await ExtractTextFromFile(filePath, fileExtension);
 
             if (string.IsNullOrEmpty(text))
             {
                 throw new Exception($"No text found in the {fileExtension} file.");
             }
 
+            var stats = await ComputeSubtitleStatsIfNeeded(filePath, fileExtension);
             return (text, stats);
+        }
+
+        static async Task<string> ExtractTextFromFile(string filePath, string fileExtension)
+        {
+            if (fileExtension is ".ass" or ".srt" or ".ssa")
+            {
+                var extractor = new SubtitleExtractor();
+                return await extractor.Extract(filePath);
+            }
+
+            if (fileExtension == ".epub")
+                return await new EbookExtractor().ExtractTextFromEbook(filePath);
+
+            if (fileExtension == ".mokuro")
+                return await new MokuroExtractor().Extract(filePath, false);
+
+            return await System.IO.File.ReadAllTextAsync(filePath);
+        }
+
+        static async Task<SubtitleMoraStats> ComputeSubtitleStatsIfNeeded(string filePath, string fileExtension)
+        {
+            if (fileExtension is not (".ass" or ".srt" or ".ssa"))
+                return SubtitleMoraStats.Empty;
+
+            var extractor = new SubtitleExtractor();
+            var items = await extractor.ExtractItems(filePath);
+            if (items.Count == 0)
+                return SubtitleMoraStats.Empty;
+
+            return await SubtitleMoraRateCalculator.ComputeAsync(items);
         }
     }
 
