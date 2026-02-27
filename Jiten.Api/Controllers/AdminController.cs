@@ -12,6 +12,7 @@ using Jiten.Core.Data;
 using Jiten.Core.Data.FSRS;
 using Jiten.Core.Data.JMDict;
 using Jiten.Core.Data.Providers;
+using Jiten.Parser;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -300,7 +301,12 @@ public partial class AdminController(
 
         // Update text if provided
         if (model.File is { Length: > 0 })
-            deck.RawText!.RawText = await GetTextFromFile(model.File);
+        {
+            var (text, stats) = await GetTextFromFile(model.File);
+            deck.RawText!.RawText = text;
+            deck.SubtitleDurationMs = stats.DurationMs;
+            deck.SubtitleKanaCount = stats.KanaCount;
+        }
 
 
         // Update links
@@ -431,7 +437,12 @@ public partial class AdminController(
                     existingSubdeck.DifficultyOverride = subdeck.DifficultyOverride;
 
                     if (subdeck.File is { Length: > 0 })
-                        existingSubdeck.RawText!.RawText = await GetTextFromFile(subdeck.File);
+                    {
+                        var (text, stats) = await GetTextFromFile(subdeck.File);
+                        existingSubdeck.RawText!.RawText = text;
+                        existingSubdeck.SubtitleDurationMs = stats.DurationMs;
+                        existingSubdeck.SubtitleKanaCount = stats.KanaCount;
+                    }
                 }
                 else
                 {
@@ -442,7 +453,12 @@ public partial class AdminController(
                                   };
 
                     if (subdeck.File is { Length: > 0 })
-                        newDeck.RawText = new DeckRawText(await GetTextFromFile(subdeck.File));
+                    {
+                        var (text, stats) = await GetTextFromFile(subdeck.File);
+                        newDeck.RawText = new DeckRawText(text);
+                        newDeck.SubtitleDurationMs = stats.DurationMs;
+                        newDeck.SubtitleKanaCount = stats.KanaCount;
+                    }
 
                     deck.Children.Add(newDeck);
                     newChildDecks.Add(newDeck);
@@ -526,28 +542,44 @@ public partial class AdminController(
 
         return Ok(new { Message = $"Media deck {deck.DeckId} updated successfully" });
 
-        async Task<string> GetTextFromFile(IFormFile file)
+        async Task<(string text, SubtitleKanaStats stats)> GetTextFromFile(IFormFile file)
         {
-            var fileExtension = Path.GetExtension(file.FileName);
+            var fileExtension = Path.GetExtension(file.FileName).ToLowerInvariant();
             var filePath = Path.Join(path, $"{Guid.NewGuid()}{fileExtension}");
             await using var stream = new FileStream(filePath, FileMode.Create);
             await file.CopyToAsync(stream);
             stream.Close();
 
-            string text = fileExtension switch
+            SubtitleKanaStats stats = SubtitleKanaStats.Empty;
+            string text = "";
+
+            if (fileExtension is ".ass" or ".srt" or ".ssa")
             {
-                ".epub" => await new EbookExtractor().ExtractTextFromEbook(filePath),
-                ".mokuro" => await new MokuroExtractor().Extract(filePath, false),
-                ".ass" or ".srt" or ".ssa" => await new SubtitleExtractor().Extract(filePath),
-                _ => await System.IO.File.ReadAllTextAsync(filePath)
-            };
+                var extractor = new SubtitleExtractor();
+                text = await extractor.Extract(filePath);
+                var items = await extractor.ExtractItems(filePath);
+                if (items.Count > 0)
+                    stats = await SubtitleKanaRateCalculator.ComputeAsync(items);
+            }
+            else if (fileExtension == ".epub")
+            {
+                text = await new EbookExtractor().ExtractTextFromEbook(filePath);
+            }
+            else if (fileExtension == ".mokuro")
+            {
+                text = await new MokuroExtractor().Extract(filePath, false);
+            }
+            else
+            {
+                text = await System.IO.File.ReadAllTextAsync(filePath);
+            }
 
             if (string.IsNullOrEmpty(text))
             {
                 throw new Exception($"No text found in the {fileExtension} file.");
             }
 
-            return text;
+            return (text, stats);
         }
     }
 
@@ -1105,6 +1137,7 @@ public partial class AdminController(
                                 .ToList();
 
             List<string> extractedFiles = [];
+            var subtitleStatsByFile = new Dictionary<string, SubtitleKanaStats>();
             foreach (var file in subtitleFiles)
             {
                 var text = await extractor.Extract(file);
@@ -1113,6 +1146,13 @@ public partial class AdminController(
                 var txtPath = Path.ChangeExtension(file, ".txt");
                 await System.IO.File.WriteAllTextAsync(txtPath, text);
                 extractedFiles.Add(txtPath);
+
+                var items = await extractor.ExtractItems(file);
+                if (items.Count > 0)
+                {
+                    var stats = await SubtitleKanaRateCalculator.ComputeAsync(items);
+                    subtitleStatsByFile[txtPath] = stats;
+                }
             }
 
             if (extractedFiles.Count > 1)
@@ -1121,12 +1161,25 @@ public partial class AdminController(
                 for (var i = 0; i < extractedFiles.Count; i++)
                 {
                     var file = extractedFiles[i];
-                    metadata.Children.Add(new Metadata { FilePath = file, OriginalTitle = $"Episode {i + 1}" });
+                    subtitleStatsByFile.TryGetValue(file, out var stats);
+                    metadata.Children.Add(new Metadata
+                    {
+                        FilePath = file,
+                        OriginalTitle = $"Episode {i + 1}",
+                        SubtitleDurationMs = stats.DurationMs,
+                        SubtitleKanaCount = stats.KanaCount
+                    });
                 }
             }
             else if (extractedFiles.Count == 1)
             {
-                metadata.FilePath = extractedFiles.First();
+                var file = extractedFiles.First();
+                metadata.FilePath = file;
+                if (subtitleStatsByFile.TryGetValue(file, out var stats))
+                {
+                    metadata.SubtitleDurationMs = stats.DurationMs;
+                    metadata.SubtitleKanaCount = stats.KanaCount;
+                }
             }
             else
             {
