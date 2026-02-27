@@ -32,6 +32,8 @@
   const displayAdminFunctions = computed(() => store.displayAdminFunctions);
   const readingSpeed = computed(() => store.readingSpeed);
   const readingDuration = computed(() => Math.round(props.deck.characterCount / readingSpeed.value));
+  const subtitleMinutes = computed(() => (props.deck.subtitleDurationMs > 0 ? props.deck.subtitleDurationMs / 60000 : 0));
+  const subtitleKanaPerMinute = computed(() => props.deck.subtitleKanaPerMinute ?? 0);
 
   const toggleMenu = (event: Event) => {
     menu.value.toggle(event);
@@ -281,6 +283,18 @@
                     >
                       <span class="text-gray-600 dark:text-gray-300 truncate pr-2 font-medium">Dialogue</span>
                       <span class="tabular-nums font-semibold">{{ deck.dialoguePercentage.toFixed(1) }}%</span>
+                    </div>
+
+                    <div v-if="!isCompact && subtitleKanaPerMinute > 0" class="flex justify-between flex-wrap stat-row">
+                      <Tooltip content="Kana per minute based on subtitle timings (overlaps merged).">
+                        <span class="text-gray-600 dark:text-gray-300 truncate pr-2 font-medium">Kana/min</span>
+                      </Tooltip>
+                      <span class="tabular-nums font-semibold">{{ subtitleKanaPerMinute.toFixed(1) }}</span>
+                    </div>
+
+                    <div v-if="!isCompact && subtitleMinutes > 0" class="flex justify-between flex-wrap stat-row">
+                      <span class="text-gray-600 dark:text-gray-300 truncate pr-2 font-medium">Subtitle time</span>
+                      <span class="tabular-nums font-semibold">{{ subtitleMinutes.toFixed(1) }} min</span>
                     </div>
 
                     <div v-if="deck.childrenDeckCount != 0" class="flex justify-between flex-wrap stat-row">

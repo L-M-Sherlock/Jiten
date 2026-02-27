@@ -294,3 +294,7 @@ __pycache__/
 .claude/
 nul
 user_dic.xml
+/data/
+/local-media/
+/static/
+docker-compose.override.yml

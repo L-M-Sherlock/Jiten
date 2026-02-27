@@ -1,7 +1,7 @@
 using System.Diagnostics;
 using System.Text;
 using System.Threading;
-using ImageMagick;
+using System.Reflection;
 using Jiten.Core.Data;
 using Jiten.Core.Data.JMDict;
 using Microsoft.EntityFrameworkCore;
@@ -19,21 +19,9 @@ public static class JitenHelper
         Console.WriteLine($"[{DateTime.UtcNow:O}] Inserting deck {deck.OriginalTitle}...");
 
         byte[]? optimizedCoverBytes = null;
-        try
+        if (cover.Length > 0)
         {
-            if (cover.Length > 0)
-            {
-                using var coverOptimized = new MagickImage(cover);
-                coverOptimized.Resize(400, 400);
-                coverOptimized.Strip();
-                coverOptimized.Quality = 85;
-                coverOptimized.Format = MagickFormat.Jpeg;
-                optimizedCoverBytes = coverOptimized.ToByteArray();
-            }
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"[{DateTime.UtcNow:O}] Warning: cover processing failed: {ex.Message}. Continuing without optimized cover.");
+            optimizedCoverBytes = TryOptimizeCover(cover);
         }
 
         // Create a context for the transactional metadata update and to get DeckId
@@ -202,6 +190,54 @@ public static class JitenHelper
 
             Console.WriteLine($"[{DateTime.UtcNow:O}] Error inserting deck: {ex.Message}");
             return;
+        }
+    }
+
+    private static byte[]? TryOptimizeCover(byte[] cover)
+    {
+        try
+        {
+            var magickAssembly = AppDomain.CurrentDomain.GetAssemblies()
+                                        .FirstOrDefault(a => a.GetName().Name == "Magick.NET-Q16-x64")
+                                 ?? Assembly.Load("Magick.NET-Q16-x64");
+
+            var magickImageType = magickAssembly.GetType("ImageMagick.MagickImage");
+            if (magickImageType == null)
+                return null;
+
+            var image = (IDisposable?)Activator.CreateInstance(magickImageType, cover);
+            if (image == null)
+                return null;
+
+            try
+            {
+                magickImageType.GetMethod("Resize", [typeof(int), typeof(int)])?.Invoke(image, [400, 400]);
+                magickImageType.GetMethod("Strip", Type.EmptyTypes)?.Invoke(image, null);
+                magickImageType.GetProperty("Quality")?.SetValue(image, 85);
+
+                var formatProp = magickImageType.GetProperty("Format");
+                if (formatProp != null)
+                {
+                    var magickFormatType = magickAssembly.GetType("ImageMagick.MagickFormat");
+                    if (magickFormatType != null)
+                    {
+                        var jpegValue = Enum.Parse(magickFormatType, "Jpeg");
+                        formatProp.SetValue(image, jpegValue);
+                    }
+                }
+
+                var toByteArray = magickImageType.GetMethod("ToByteArray", Type.EmptyTypes);
+                return toByteArray?.Invoke(image, null) as byte[];
+            }
+            finally
+            {
+                image.Dispose();
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[{DateTime.UtcNow:O}] Warning: cover processing failed: {ex.Message}. Continuing without optimized cover.");
+            return null;
         }
     }
 
