@@ -340,7 +340,7 @@ public partial class AdminController(
             var (text, stats) = await GetTextFromFile(model.File);
             deck.RawText!.RawText = text;
             deck.SubtitleDurationMs = stats.DurationMs;
-            deck.SubtitleKanaCount = stats.KanaCount;
+            deck.SubtitleMoraCount = stats.MoraCount;
         }
 
 
@@ -476,7 +476,7 @@ public partial class AdminController(
                         var (text, stats) = await GetTextFromFile(subdeck.File);
                         existingSubdeck.RawText!.RawText = text;
                         existingSubdeck.SubtitleDurationMs = stats.DurationMs;
-                        existingSubdeck.SubtitleKanaCount = stats.KanaCount;
+                        existingSubdeck.SubtitleMoraCount = stats.MoraCount;
                     }
                 }
                 else
@@ -492,7 +492,7 @@ public partial class AdminController(
                         var (text, stats) = await GetTextFromFile(subdeck.File);
                         newDeck.RawText = new DeckRawText(text);
                         newDeck.SubtitleDurationMs = stats.DurationMs;
-                        newDeck.SubtitleKanaCount = stats.KanaCount;
+                        newDeck.SubtitleMoraCount = stats.MoraCount;
                     }
 
                     deck.Children.Add(newDeck);
@@ -577,7 +577,7 @@ public partial class AdminController(
 
         return Ok(new { Message = $"Media deck {deck.DeckId} updated successfully" });
 
-        async Task<(string text, SubtitleKanaStats stats)> GetTextFromFile(IFormFile file)
+        async Task<(string text, SubtitleMoraStats stats)> GetTextFromFile(IFormFile file)
         {
             var fileExtension = Path.GetExtension(file.FileName).ToLowerInvariant();
             var filePath = Path.Join(path, $"{Guid.NewGuid()}{fileExtension}");
@@ -585,7 +585,7 @@ public partial class AdminController(
             await file.CopyToAsync(stream);
             stream.Close();
 
-            SubtitleKanaStats stats = SubtitleKanaStats.Empty;
+            SubtitleMoraStats stats = SubtitleMoraStats.Empty;
             string text = "";
 
             if (fileExtension is ".ass" or ".srt" or ".ssa")
@@ -594,7 +594,7 @@ public partial class AdminController(
                 text = await extractor.Extract(filePath);
                 var items = await extractor.ExtractItems(filePath);
                 if (items.Count > 0)
-                    stats = await SubtitleKanaRateCalculator.ComputeAsync(items);
+                    stats = await SubtitleMoraRateCalculator.ComputeAsync(items);
             }
             else if (fileExtension == ".epub")
             {
@@ -1172,7 +1172,7 @@ public partial class AdminController(
                                 .ToList();
 
             List<string> extractedFiles = [];
-            var subtitleStatsByFile = new Dictionary<string, SubtitleKanaStats>();
+            var subtitleStatsByFile = new Dictionary<string, SubtitleMoraStats>();
             foreach (var file in subtitleFiles)
             {
                 var text = await extractor.Extract(file);
@@ -1185,7 +1185,7 @@ public partial class AdminController(
                 var items = await extractor.ExtractItems(file);
                 if (items.Count > 0)
                 {
-                    var stats = await SubtitleKanaRateCalculator.ComputeAsync(items);
+                    var stats = await SubtitleMoraRateCalculator.ComputeAsync(items);
                     subtitleStatsByFile[txtPath] = stats;
                 }
             }
@@ -1202,7 +1202,7 @@ public partial class AdminController(
                         FilePath = file,
                         OriginalTitle = $"Episode {i + 1}",
                         SubtitleDurationMs = stats.DurationMs,
-                        SubtitleKanaCount = stats.KanaCount
+                        SubtitleMoraCount = stats.MoraCount
                     });
                 }
             }
@@ -1213,7 +1213,7 @@ public partial class AdminController(
                 if (subtitleStatsByFile.TryGetValue(file, out var stats))
                 {
                     metadata.SubtitleDurationMs = stats.DurationMs;
-                    metadata.SubtitleKanaCount = stats.KanaCount;
+                    metadata.SubtitleMoraCount = stats.MoraCount;
                 }
             }
             else

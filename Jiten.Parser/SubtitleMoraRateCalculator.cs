@@ -6,18 +6,18 @@ using Jiten.Core.Data;
 
 namespace Jiten.Parser;
 
-public readonly record struct SubtitleKanaStats(long KanaCount, long DurationMs)
+public readonly record struct SubtitleMoraStats(long MoraCount, long DurationMs)
 {
-    public static readonly SubtitleKanaStats Empty = new(0, 0);
+    public static readonly SubtitleMoraStats Empty = new(0, 0);
 
-    public double KanaPerMinute => DurationMs > 0 ? KanaCount / (DurationMs / 60000.0) : 0;
+    public double MoraPerMinute => DurationMs > 0 ? MoraCount / (DurationMs / 60000.0) : 0;
 }
 
-public static class SubtitleKanaRateCalculator
+public static class SubtitleMoraRateCalculator
 {
     private static readonly Regex KanaTildeRegex = new(@"(?<=[\u3040-\u309F\u30A0-\u30FF])[～〜]+", RegexOptions.Compiled);
 
-    public static async Task<SubtitleKanaStats> ComputeAsync(IEnumerable<SubtitleItem> items)
+    public static async Task<SubtitleMoraStats> ComputeAsync(IEnumerable<SubtitleItem> items)
     {
         var intervals = new List<(int start, int end)>();
         var texts = new List<string>();
@@ -41,13 +41,13 @@ public static class SubtitleKanaRateCalculator
             texts.Add(spoken);
         }
 
-        var kanaCount = await CountKanaAsync(texts);
+        var moraCount = await CountMoraAsync(texts);
         var durationMs = MergeIntervals(intervals).Sum(i => (long)i.end - i.start);
 
-        return new SubtitleKanaStats(kanaCount, durationMs);
+        return new SubtitleMoraStats(moraCount, durationMs);
     }
 
-    private static async Task<long> CountKanaAsync(IReadOnlyList<string> texts)
+    private static async Task<long> CountMoraAsync(IReadOnlyList<string> texts)
     {
         if (texts.Count == 0)
             return 0;
@@ -64,14 +64,14 @@ public static class SubtitleKanaRateCalculator
         {
             foreach (var (word, _, _) in sentence.Words)
             {
-                count += CountKana(word);
+                count += CountMora(word);
             }
         }
 
         return count;
     }
 
-    private static int CountKana(WordInfo word)
+    private static int CountMora(WordInfo word)
     {
         if (word.PartOfSpeech is PartOfSpeech.Symbol or PartOfSpeech.SupplementarySymbol or PartOfSpeech.BlankSpace)
             return 0;

@@ -19,5 +19,5 @@ public class Metadata
     public bool IsNotOriginallyJapanese { get; set; }
     public List<MetadataRelation> Relations { get; set; } = new();
     public long? SubtitleDurationMs { get; set; }
-    public long? SubtitleKanaCount { get; set; }
+    public long? SubtitleMoraCount { get; set; }
 }

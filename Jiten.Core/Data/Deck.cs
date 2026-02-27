@@ -106,15 +106,15 @@ public class Deck
     public long SubtitleDurationMs { get; set; }
 
     /// <summary>
-    /// Total kana count for subtitle text (after reading conversion)
+    /// Total mora count for subtitle text (after reading conversion)
     /// </summary>
-    public long SubtitleKanaCount { get; set; }
+    public long SubtitleMoraCount { get; set; }
 
     /// <summary>
-    /// Kana per minute, computed from SubtitleKanaCount and SubtitleDurationMs
+    /// Mora per minute, computed from SubtitleMoraCount and SubtitleDurationMs
     /// </summary>
     [NotMapped]
-    public double SubtitleKanaPerMinute => SubtitleDurationMs > 0 ? SubtitleKanaCount / (SubtitleDurationMs / 60000.0) : 0;
+    public double SubtitleMoraPerMinute => SubtitleDurationMs > 0 ? SubtitleMoraCount / (SubtitleDurationMs / 60000.0) : 0;
 
     /// <summary>
     /// Average sentence length with decimal precision
@@ -257,7 +257,7 @@ public class Deck
         UniqueWordUsedOnceCount = DeckWords.Where(dw => dw.Occurrences == 1).Select(dw => new { dw.WordId, dw.ReadingIndex }).Distinct().Count();
         SentenceCount = Children.Sum(c => c.SentenceCount);
         SubtitleDurationMs = Children.Sum(c => c.SubtitleDurationMs);
-        SubtitleKanaCount = Children.Sum(c => c.SubtitleKanaCount);
+        SubtitleMoraCount = Children.Sum(c => c.SubtitleMoraCount);
         Difficulty = Children.Average(c => c.Difficulty);
         DialoguePercentage = Children.Sum(c => c.DialoguePercentage) / Children.Count;
 

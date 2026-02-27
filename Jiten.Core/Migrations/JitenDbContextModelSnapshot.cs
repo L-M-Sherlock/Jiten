@@ -96,7 +96,7 @@ namespace Jiten.Core.Migrations
                     b.Property<long>("SubtitleDurationMs")
                         .HasColumnType("bigint");
 
-                    b.Property<long>("SubtitleKanaCount")
+                    b.Property<long>("SubtitleMoraCount")
                         .HasColumnType("bigint");
 
                     b.Property<int>("UniqueKanjiCount")

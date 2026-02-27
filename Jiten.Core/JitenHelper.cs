@@ -420,7 +420,7 @@ public static class JitenHelper
         existingDeck.UniqueKanjiUsedOnceCount = deck.UniqueKanjiUsedOnceCount;
         existingDeck.SentenceCount = deck.SentenceCount;
         existingDeck.SubtitleDurationMs = deck.SubtitleDurationMs;
-        existingDeck.SubtitleKanaCount = deck.SubtitleKanaCount;
+        existingDeck.SubtitleMoraCount = deck.SubtitleMoraCount;
         existingDeck.Difficulty = deck.Difficulty;
         existingDeck.DialoguePercentage = deck.DialoguePercentage;
         existingDeck.RawText = deck.RawText;
@@ -503,7 +503,7 @@ public static class JitenHelper
                     UniqueKanjiCount = child.UniqueKanjiCount,
                     SentenceCount = child.SentenceCount,
                     SubtitleDurationMs = child.SubtitleDurationMs,
-                    SubtitleKanaCount = child.SubtitleKanaCount,
+                    SubtitleMoraCount = child.SubtitleMoraCount,
                     WordCount = child.WordCount,
                     Difficulty = child.Difficulty,
                     DialoguePercentage = child.DialoguePercentage,
