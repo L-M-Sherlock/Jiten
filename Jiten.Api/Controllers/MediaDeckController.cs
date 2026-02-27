@@ -233,6 +233,8 @@ public class MediaDeckController(
     /// <param name="coverageMax"></param>
     /// <param name="uniqueCoverageMin"></param>
     /// <param name="uniqueCoverageMax"></param>
+    /// <param name="subtitleRateMin"></param>
+    /// <param name="subtitleRateMax"></param>
     /// <param name="excludeSequels"></param>
     /// <returns>Paginated list of decks.</returns>
     [HttpGet("get-media-decks")]
@@ -244,7 +246,7 @@ public class MediaDeckController(
                        "uniqueKanjiMin",
                        "uniqueKanjiMax", "subdeckCountMin", "subdeckCountMax", "extRatingMin", "extRatingMax", "genres",
                        "excludeGenres", "tags", "excludeTags", "coverageMin", "coverageMax", "uniqueCoverageMin",
-                       "uniqueCoverageMax"
+                       "uniqueCoverageMax", "subtitleRateMin", "subtitleRateMax"
                    ])]
     [SwaggerOperation(Summary = "List media decks",
                       Description =
@@ -265,6 +267,7 @@ public class MediaDeckController(
                                                                       string? tags = null, string? excludeTags = null,
                                                                       float? coverageMin = null, float? coverageMax = null,
                                                                       float? uniqueCoverageMin = null, float? uniqueCoverageMax = null,
+                                                                      float? subtitleRateMin = null, float? subtitleRateMax = null,
                                                                       bool? excludeSequels = null)
     {
         // Disable response caching for authenticated users
@@ -403,6 +406,17 @@ public class MediaDeckController(
 
         if (extRatingMax != null)
             query = query.Where(d => d.ExternalRating <= extRatingMax);
+
+        if (subtitleRateMin != null || subtitleRateMax != null)
+        {
+            query = query.Where(d => d.SubtitleDurationMs > 0);
+
+            if (subtitleRateMin != null)
+                query = query.Where(d => d.SubtitleMoraCount / (d.SubtitleDurationMs / 60000.0) >= subtitleRateMin);
+
+            if (subtitleRateMax != null)
+                query = query.Where(d => d.SubtitleMoraCount / (d.SubtitleDurationMs / 60000.0) <= subtitleRateMax);
+        }
 
         // Genre filters
         if (!string.IsNullOrEmpty(genres))

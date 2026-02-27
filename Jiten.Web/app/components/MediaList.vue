@@ -113,6 +113,8 @@
   const subdeckCountMax = ref<number | null>(toNumOrNull(route.query.subdeckCountMax));
   const extRatingMin = ref<number | null>(toNumOrNull(route.query.extRatingMin));
   const extRatingMax = ref<number | null>(toNumOrNull(route.query.extRatingMax));
+  const subtitleRateMin = ref<number | null>(toNumOrNull(route.query.subtitleRateMin));
+  const subtitleRateMax = ref<number | null>(toNumOrNull(route.query.subtitleRateMax));
   const coverageMin = ref<number | null>(toNumOrNull(route.query.coverageMin));
   const coverageMax = ref<number | null>(toNumOrNull(route.query.coverageMax));
   const uniqueCoverageMin = ref<number | null>(toNumOrNull(route.query.uniqueCoverageMin));
@@ -148,6 +150,7 @@
   watch([uniqueKanjiMin, uniqueKanjiMax], () => normalizePair(uniqueKanjiMin, uniqueKanjiMax, 0, 5000));
   watch([subdeckCountMin, subdeckCountMax], () => normalizePair(subdeckCountMin, subdeckCountMax, 0, 2000));
   watch([extRatingMin, extRatingMax], () => normalizePair(extRatingMin, extRatingMax, 0, 2000));
+  watch([subtitleRateMin, subtitleRateMax], () => normalizePair(subtitleRateMin, subtitleRateMax, 0, 800));
   watch([coverageMin, coverageMax], () => normalizePair(coverageMin, coverageMax, 0, 100));
   watch([uniqueCoverageMin, uniqueCoverageMax], () => normalizePair(uniqueCoverageMin, uniqueCoverageMax, 0, 100));
 
@@ -164,6 +167,8 @@
     subdeckCountMax: subdeckCountMax.value,
     extRatingMin: extRatingMin.value,
     extRatingMax: extRatingMax.value,
+    subtitleRateMin: subtitleRateMin.value,
+    subtitleRateMax: subtitleRateMax.value,
     coverageMin: coverageMin.value,
     coverageMax: coverageMax.value,
     uniqueCoverageMin: uniqueCoverageMin.value,
@@ -190,6 +195,8 @@
         subdeckCountMax: subdeckCountMax.value,
         extRatingMin: extRatingMin.value,
         extRatingMax: extRatingMax.value,
+        subtitleRateMin: subtitleRateMin.value,
+        subtitleRateMax: subtitleRateMax.value,
         coverageMin: coverageMin.value,
         coverageMax: coverageMax.value,
         uniqueCoverageMin: uniqueCoverageMin.value,
@@ -219,6 +226,8 @@
           subdeckCountMax: toUndef(subdeckCountMax.value) as any,
           extRatingMin: toUndef(extRatingMin.value) as any,
           extRatingMax: toUndef(extRatingMax.value) as any,
+          subtitleRateMin: toUndef(subtitleRateMin.value) as any,
+          subtitleRateMax: toUndef(subtitleRateMax.value) as any,
           coverageMin: toUndef(coverageMin.value) as any,
           coverageMax: toUndef(coverageMax.value) as any,
           uniqueCoverageMin: toUndef(uniqueCoverageMin.value) as any,
@@ -237,7 +246,7 @@
   );
 
   watch(
-    [charCountMin, charCountMax, difficultyMin, difficultyMax, releaseYearMin, releaseYearMax, uniqueKanjiMin, uniqueKanjiMax, subdeckCountMin, subdeckCountMax, extRatingMin, extRatingMax, coverageMin, coverageMax, uniqueCoverageMin, uniqueCoverageMax, excludeSequels],
+    [charCountMin, charCountMax, difficultyMin, difficultyMax, releaseYearMin, releaseYearMax, uniqueKanjiMin, uniqueKanjiMax, subdeckCountMin, subdeckCountMax, extRatingMin, extRatingMax, subtitleRateMin, subtitleRateMax, coverageMin, coverageMax, uniqueCoverageMin, uniqueCoverageMax, excludeSequels],
     () => {
       updateFiltersDebounced();
     }
@@ -331,6 +340,8 @@
     subdeckCountMax.value = null;
     extRatingMin.value = null;
     extRatingMax.value = null;
+    subtitleRateMin.value = null;
+    subtitleRateMax.value = null;
     coverageMin.value = null;
     coverageMax.value = null;
     uniqueCoverageMin.value = null;
@@ -363,6 +374,8 @@
         subdeckCountMax: undefined,
         extRatingMin: undefined,
         extRatingMax: undefined,
+        subtitleRateMin: undefined,
+        subtitleRateMax: undefined,
         coverageMin: undefined,
         coverageMax: undefined,
         uniqueCoverageMin: undefined,
@@ -475,6 +488,8 @@
       subdeckCountMax: computed(() => debouncedFilters.value.subdeckCountMax),
       extRatingMin: computed(() => debouncedFilters.value.extRatingMin),
       extRatingMax: computed(() => debouncedFilters.value.extRatingMax),
+      subtitleRateMin: computed(() => debouncedFilters.value.subtitleRateMin),
+      subtitleRateMax: computed(() => debouncedFilters.value.subtitleRateMax),
       coverageMin: computed(() => debouncedFilters.value.coverageMin),
       coverageMax: computed(() => debouncedFilters.value.coverageMax),
       uniqueCoverageMin: computed(() => debouncedFilters.value.uniqueCoverageMin),
@@ -588,6 +603,8 @@
         v-model:subdeck-count-max="subdeckCountMax"
         v-model:ext-rating-min="extRatingMin"
         v-model:ext-rating-max="extRatingMax"
+        v-model:subtitle-rate-min="subtitleRateMin"
+        v-model:subtitle-rate-max="subtitleRateMax"
         v-model:coverage-min="coverageMin"
         v-model:coverage-max="coverageMax"
         v-model:unique-coverage-min="uniqueCoverageMin"
