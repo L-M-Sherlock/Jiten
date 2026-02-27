@@ -25,22 +25,54 @@ public static class SubtitleMoraRateCalculator
 
     public static async Task<SubtitleMoraStats> ComputeAsync(IEnumerable<SubtitleItem> items)
     {
-        var intervals = new List<(int start, int end)>();
-        var texts = new List<string>();
+        var entries = new List<SubtitleEntry>();
 
         foreach (var item in items)
         {
             if (!TryGetSpokenText(item.Text, out var spoken))
                 continue;
 
-            intervals.Add((item.StartMs, item.EndMs));
-            texts.Add(spoken);
+            if (item.EndMs <= item.StartMs)
+                continue;
+
+            entries.Add(new SubtitleEntry(item.StartMs, item.EndMs, spoken));
         }
 
-        var moraCount = await CountMoraAsync(texts);
-        var durationMs = MergeIntervals(intervals).Sum(i => (long)i.end - i.start);
+        if (entries.Count == 0)
+            return SubtitleMoraStats.Empty;
 
-        return new SubtitleMoraStats(moraCount, durationMs);
+        var moraCounts = await CountMoraPerTextAsync(entries.Select(e => e.Text).ToList());
+        if (moraCounts.Count == 0)
+            return SubtitleMoraStats.Empty;
+
+        var rateEntries = new List<SubtitleRateEntry>(entries.Count);
+        for (int i = 0; i < entries.Count && i < moraCounts.Count; i++)
+        {
+            var moraCount = moraCounts[i];
+            if (moraCount <= 0)
+                continue;
+
+            var entry = entries[i];
+            var durationMs = entry.EndMs - entry.StartMs;
+            if (durationMs <= 0)
+                continue;
+
+            var rate = moraCount / (durationMs / 60000.0);
+            rateEntries.Add(new SubtitleRateEntry(entry.StartMs, entry.EndMs, moraCount, rate));
+        }
+
+        if (rateEntries.Count == 0)
+            return SubtitleMoraStats.Empty;
+
+        rateEntries = TrimOutliers(rateEntries);
+        if (rateEntries.Count == 0)
+            return SubtitleMoraStats.Empty;
+
+        var totalMora = rateEntries.Sum(e => e.MoraCount);
+        var durationMsTotal = MergeIntervals(rateEntries.Select(e => (e.StartMs, e.EndMs)).ToList())
+            .Sum(i => (long)i.end - i.start);
+
+        return new SubtitleMoraStats(totalMora, durationMsTotal);
     }
 
     private static bool TryGetSpokenText(string rawText, out string spoken)
@@ -63,28 +95,30 @@ public static class SubtitleMoraRateCalculator
         return true;
     }
 
-    private static async Task<long> CountMoraAsync(IReadOnlyList<string> texts)
+    private static async Task<List<long>> CountMoraPerTextAsync(IReadOnlyList<string> texts)
     {
         if (texts.Count == 0)
-            return 0;
-
-        var combined = string.Join("\n", texts);
-        if (string.IsNullOrWhiteSpace(combined))
-            return 0;
+            return [];
 
         var parser = new MorphologicalAnalyser();
-        var sentences = await parser.Parse(combined, morphemesOnly: true);
+        var batches = await parser.ParseBatch(texts.ToList(), morphemesOnly: true);
+        var counts = new List<long>(batches.Count);
 
-        long count = 0;
-        foreach (var sentence in sentences)
+        foreach (var sentences in batches)
         {
-            foreach (var (word, _, _) in sentence.Words)
+            long count = 0;
+            foreach (var sentence in sentences)
             {
-                count += CountMora(word);
+                foreach (var (word, _, _) in sentence.Words)
+                {
+                    count += CountMora(word);
+                }
             }
+
+            counts.Add(count);
         }
 
-        return count;
+        return counts;
     }
 
     private static int CountMora(WordInfo word)
@@ -175,4 +209,42 @@ public static class SubtitleMoraRateCalculator
 
         return merged;
     }
+
+    private static List<SubtitleRateEntry> TrimOutliers(List<SubtitleRateEntry> entries)
+    {
+        if (entries.Count < 4)
+            return entries;
+
+        var rates = entries.Select(e => e.Rate).OrderBy(r => r).ToList();
+        var q1 = Percentile(rates, 25);
+        var q3 = Percentile(rates, 75);
+        var iqr = q3 - q1;
+        if (iqr <= 0)
+            return entries;
+
+        var lower = q1 - 1.5 * iqr;
+        var upper = q3 + 1.5 * iqr;
+        return entries.Where(e => e.Rate >= lower && e.Rate <= upper).ToList();
+    }
+
+    private static double Percentile(IReadOnlyList<double> sortedValues, double percentile)
+    {
+        if (sortedValues.Count == 0)
+            return 0;
+        if (percentile <= 0)
+            return sortedValues[0];
+        if (percentile >= 100)
+            return sortedValues[^1];
+
+        var k = (sortedValues.Count - 1) * (percentile / 100.0);
+        var f = (int)Math.Floor(k);
+        var c = Math.Min(f + 1, sortedValues.Count - 1);
+        if (f == c)
+            return sortedValues[f];
+
+        return sortedValues[f] * (c - k) + sortedValues[c] * (k - f);
+    }
+
+    private readonly record struct SubtitleEntry(int StartMs, int EndMs, string Text);
+    private readonly record struct SubtitleRateEntry(int StartMs, int EndMs, long MoraCount, double Rate);
 }

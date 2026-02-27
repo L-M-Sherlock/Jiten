@@ -286,7 +286,7 @@
                     </div>
 
                     <div v-if="!isCompact && subtitleMoraPerMinute > 0" class="flex justify-between flex-wrap stat-row">
-                      <Tooltip content="Mora per minute based on subtitle timings (overlaps merged), excluding sokuon and ー.">
+                      <Tooltip content="Mora per minute based on subtitle timings (overlaps merged), excluding sokuon and ー, with IQR-trimmed outliers.">
                         <span class="text-gray-600 dark:text-gray-300 truncate pr-2 font-medium">Mora/min</span>
                       </Tooltip>
                       <span class="tabular-nums font-semibold">{{ subtitleMoraPerMinute.toFixed(1) }}</span>
