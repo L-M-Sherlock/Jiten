@@ -21,6 +21,7 @@ public static class SubtitleMoraRateCalculator
         new(@"(?<=[\u3040-\u309F\u30A0-\u30FF])[～〜]+", RegexOptions.Compiled);
     private const string SokuonChars = "っッ";
     private const string SmallKanaChars = "ぁぃぅぇぉゃゅょゎゕゖァィゥェォャュョヮヵヶ";
+    private const char LongVowelMark = 'ー';
 
     public static async Task<SubtitleMoraStats> ComputeAsync(IEnumerable<SubtitleItem> items)
     {
@@ -109,12 +110,14 @@ public static class SubtitleMoraRateCalculator
         return string.IsNullOrEmpty(reading) || reading == "*" ? word.Text : reading;
     }
 
-    // Mora counting here explicitly excludes sokuon (small tsu).
+    // Mora counting here explicitly excludes sokuon (small tsu) and the long vowel mark.
     private static bool IsMoraKana(Rune rune)
     {
         if (!IsKana(rune))
             return false;
         if (IsSokuon(rune))
+            return false;
+        if (IsLongVowelMark(rune))
             return false;
         if (IsSmallKana(rune))
             return false;
@@ -129,6 +132,11 @@ public static class SubtitleMoraRateCalculator
     private static bool IsSokuon(Rune rune)
     {
         return rune.Value <= char.MaxValue && SokuonChars.Contains((char)rune.Value);
+    }
+
+    private static bool IsLongVowelMark(Rune rune)
+    {
+        return rune.Value == LongVowelMark;
     }
 
     private static bool IsSmallKana(Rune rune)
