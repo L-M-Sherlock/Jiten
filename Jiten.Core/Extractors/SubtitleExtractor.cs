@@ -85,7 +85,7 @@ public partial class SubtitleExtractor
             ".ass" or ".ssa" => await ParseAssItems(filePath),
             _ => []
         } is { Count: > 0 } rawItems
-            ? MergeDuplicateItems(CleanItemText(rawItems), maxGapMs: 200)
+            ? MergeDuplicateItems(CleanItemText(rawItems), maxGapMs: 3000, minLengthForGap: 8)
             : [];
     }
 
@@ -170,7 +170,7 @@ public partial class SubtitleExtractor
         return items;
     }
 
-    private static List<SubtitleItem> MergeDuplicateItems(IEnumerable<SubtitleItem> items, int maxGapMs = 0)
+    private static List<SubtitleItem> MergeDuplicateItems(IEnumerable<SubtitleItem> items, int maxGapMs = 0, int minLengthForGap = 0)
     {
         var grouped = new Dictionary<string, List<(int start, int end)>>();
         foreach (var item in items)
@@ -193,13 +193,20 @@ public partial class SubtitleExtractor
                 return startCompare != 0 ? startCompare : a.end.CompareTo(b.end);
             });
 
+            if (spans.Count == 1)
+            {
+                mergedItems.Add(new SubtitleItem(spans[0].start, spans[0].end, text));
+                continue;
+            }
+
+            var gapLimit = GetTextLength(text) >= minLengthForGap ? maxGapMs : 0;
             var currentStart = spans[0].start;
             var currentEnd = spans[0].end;
 
             for (int i = 1; i < spans.Count; i++)
             {
                 var (start, end) = spans[i];
-                if (start <= currentEnd + maxGapMs)
+                if (start <= currentEnd + gapLimit)
                 {
                     currentEnd = Math.Max(currentEnd, end);
                 }
@@ -226,6 +233,15 @@ public partial class SubtitleExtractor
         });
 
         return mergedItems;
+    }
+
+    private static int GetTextLength(string text)
+    {
+        var stripped = SubtitleTextCleaner.StripNonSpoken(text);
+        if (string.IsNullOrEmpty(stripped))
+            return 0;
+
+        return stripped.Replace("\n", "", StringComparison.Ordinal).Length;
     }
 
     private static bool TryParseSrtTimeRange(string line, out int startMs, out int endMs)
