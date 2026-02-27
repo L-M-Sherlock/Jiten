@@ -1,6 +1,7 @@
 using System.Text;
 using System.Linq;
 using System.Text.RegularExpressions;
+using System.Text.Unicode;
 using Jiten.Core;
 using Jiten.Core.Data;
 
@@ -15,7 +16,11 @@ public readonly record struct SubtitleMoraStats(long MoraCount, long DurationMs)
 
 public static class SubtitleMoraRateCalculator
 {
-    private static readonly Regex KanaTildeRegex = new(@"(?<=[\u3040-\u309F\u30A0-\u30FF])[～〜]+", RegexOptions.Compiled);
+    // Drop elongation tildes that follow kana so they do not count toward mora.
+    private static readonly Regex KanaTildeRegex =
+        new(@"(?<=[\u3040-\u309F\u30A0-\u30FF])[～〜]+", RegexOptions.Compiled);
+    private const string SokuonChars = "っッ";
+    private const string SmallKanaChars = "ぁぃぅぇぉゃゅょゎゕゖァィゥェォャュョヮヵヶ";
 
     public static async Task<SubtitleMoraStats> ComputeAsync(IEnumerable<SubtitleItem> items)
     {
@@ -24,20 +29,10 @@ public static class SubtitleMoraRateCalculator
 
         foreach (var item in items)
         {
-            var cleaned = SubtitleTextCleaner.CleanText(item.Text);
-            if (string.IsNullOrWhiteSpace(cleaned))
+            if (!TryGetSpokenText(item.Text, out var spoken))
                 continue;
 
             intervals.Add((item.StartMs, item.EndMs));
-
-            var spoken = SubtitleTextCleaner.StripNonSpoken(cleaned);
-            if (string.IsNullOrWhiteSpace(spoken))
-                continue;
-
-            spoken = KanaTildeRegex.Replace(spoken, "");
-            if (string.IsNullOrWhiteSpace(spoken))
-                continue;
-
             texts.Add(spoken);
         }
 
@@ -45,6 +40,26 @@ public static class SubtitleMoraRateCalculator
         var durationMs = MergeIntervals(intervals).Sum(i => (long)i.end - i.start);
 
         return new SubtitleMoraStats(moraCount, durationMs);
+    }
+
+    private static bool TryGetSpokenText(string rawText, out string spoken)
+    {
+        spoken = string.Empty;
+
+        var cleaned = SubtitleTextCleaner.CleanText(rawText);
+        if (string.IsNullOrWhiteSpace(cleaned))
+            return false;
+
+        var stripped = SubtitleTextCleaner.StripNonSpoken(cleaned);
+        if (string.IsNullOrWhiteSpace(stripped))
+            return false;
+
+        stripped = KanaTildeRegex.Replace(stripped, "");
+        if (string.IsNullOrWhiteSpace(stripped))
+            return false;
+
+        spoken = stripped;
+        return true;
     }
 
     private static async Task<long> CountMoraAsync(IReadOnlyList<string> texts)
@@ -76,41 +91,56 @@ public static class SubtitleMoraRateCalculator
         if (word.PartOfSpeech is PartOfSpeech.Symbol or PartOfSpeech.SupplementarySymbol or PartOfSpeech.BlankSpace)
             return 0;
 
-        var reading = word.Reading;
-        if (string.IsNullOrEmpty(reading) || reading == "*")
-            reading = word.Text;
+        var reading = GetReadingOrSurface(word);
 
         var count = 0;
         foreach (var rune in reading.EnumerateRunes())
         {
-            if (IsSokuon(rune))
-                continue;
-            if (IsSmallKana(rune))
-                continue;
-            if (IsKana(rune))
+            if (IsMoraKana(rune))
                 count++;
         }
 
         return count;
     }
 
+    private static string GetReadingOrSurface(WordInfo word)
+    {
+        var reading = word.Reading;
+        return string.IsNullOrEmpty(reading) || reading == "*" ? word.Text : reading;
+    }
+
+    private static bool IsMoraKana(Rune rune)
+    {
+        if (!IsKana(rune))
+            return false;
+        if (IsSokuon(rune))
+            return false;
+        if (IsSmallKana(rune))
+            return false;
+        return true;
+    }
+
     private static bool IsKana(Rune rune)
     {
-        return rune.Value is >= 0x3040 and <= 0x309F
-            || rune.Value is >= 0x30A0 and <= 0x30FF;
+        return IsInRange(rune, UnicodeRanges.Hiragana) || IsInRange(rune, UnicodeRanges.Katakana);
     }
 
     private static bool IsSokuon(Rune rune)
     {
-        return rune.Value is 0x3063 or 0x30C3;
+        return rune.Value <= char.MaxValue && SokuonChars.Contains((char)rune.Value);
     }
 
     private static bool IsSmallKana(Rune rune)
     {
-        return rune.Value is 0x3041 or 0x3043 or 0x3045 or 0x3047 or 0x3049
-            or 0x3083 or 0x3085 or 0x3087 or 0x308E or 0x3095 or 0x3096
-            or 0x30A1 or 0x30A3 or 0x30A5 or 0x30A7 or 0x30A9
-            or 0x30E3 or 0x30E5 or 0x30E7 or 0x30EE or 0x30F5 or 0x30F6;
+        return rune.Value <= char.MaxValue && SmallKanaChars.Contains((char)rune.Value);
+    }
+
+    private static bool IsInRange(Rune rune, UnicodeRange range)
+    {
+        var start = range.FirstCodePoint;
+        var end = start + range.Length - 1;
+        var value = rune.Value;
+        return value >= start && value <= end;
     }
 
     private static List<(int start, int end)> MergeIntervals(List<(int start, int end)> intervals)
