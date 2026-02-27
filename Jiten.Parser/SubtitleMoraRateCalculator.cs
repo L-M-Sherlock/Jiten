@@ -109,6 +109,7 @@ public static class SubtitleMoraRateCalculator
         return string.IsNullOrEmpty(reading) || reading == "*" ? word.Text : reading;
     }
 
+    // Mora counting here explicitly excludes sokuon (small tsu).
     private static bool IsMoraKana(Rune rune)
     {
         if (!IsKana(rune))
