@@ -13,8 +13,8 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Jiten.Core.Migrations
 {
     [DbContext(typeof(JitenDbContext))]
-    [Migration("20260227120000_AddSubtitleKanaStats")]
-    partial class AddSubtitleKanaStats
+    [Migration("20260227120000_AddSubtitleMoraStats")]
+    partial class AddSubtitleMoraStats
     {
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
@@ -98,7 +98,7 @@ namespace Jiten.Core.Migrations
                     b.Property<long>("SubtitleDurationMs")
                         .HasColumnType("bigint");
 
-                    b.Property<long>("SubtitleKanaCount")
+                    b.Property<long>("SubtitleMoraCount")
                         .HasColumnType("bigint");
 
                     b.Property<int>("UniqueKanjiCount")

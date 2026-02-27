@@ -5,7 +5,7 @@
 namespace Jiten.Core.Migrations
 {
     /// <inheritdoc />
-    public partial class AddSubtitleKanaStats : Migration
+    public partial class AddSubtitleMoraStats : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
@@ -19,7 +19,7 @@ namespace Jiten.Core.Migrations
                 defaultValue: 0L);
 
             migrationBuilder.AddColumn<long>(
-                name: "SubtitleKanaCount",
+                name: "SubtitleMoraCount",
                 schema: "jiten",
                 table: "Decks",
                 type: "bigint",
@@ -36,7 +36,7 @@ namespace Jiten.Core.Migrations
                 table: "Decks");
 
             migrationBuilder.DropColumn(
-                name: "SubtitleKanaCount",
+                name: "SubtitleMoraCount",
                 schema: "jiten",
                 table: "Decks");
         }
