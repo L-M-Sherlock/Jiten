@@ -203,6 +203,11 @@ public class FormSelectionTests
         // やろう as noun 野郎/guy (1537700) → Sudachi POS=名詞, DictForm=やろう (no penalty: dictForm==surface)
         yield return ["あのやろうが来た", "やろう", 1537700, (byte)1];
 
+        // やろ (Kansai dialect, volitional of copula や) → expression やろう/やろ (2083340)
+        // ExpressionConflictPenalty is softened when DictForm "や" is a prefix of surface "やろ",
+        // preventing noun 夜露 (1537230, "evening dew") from winning via its coincidental やろ kana reading
+        yield return ["いやもっと楽しそうにしとったやろ", "やろ", 2083340, (byte)1];
+
         // 長 as suffix (チョウ) should resolve to ちょう "chief/head" (1429740), not なが "long" (2647210)
         yield return ["騎士団長", "長", 1429740, (byte)0];
 
@@ -361,6 +366,9 @@ public class FormSelectionTests
         yield return ["ここがくさい", "くさい", 1333150, (byte)1];
         yield return ["すごいくさい", "くさい", 1333150, (byte)1];
 
+        // colloquial せぇ → さい: 面倒くせぇ = 面倒くさい (1533560, adj-i)
+        yield return ["面倒くせぇ", "面倒くさい", 1533560, (byte)0];
+
         // 隙 in context → すき/opening (1253780), not ひま/obsolete (2861550)
         // FixReadingAmbiguity overrides Sudachi ヒマ→スキ for standalone 隙
         yield return ["いなくなった隙に奪い取る", "隙", 1253780, (byte)0];
@@ -494,6 +502,46 @@ public class FormSelectionTests
         // 1383800 has "prt" in JMDict POS → particle-particle-penalty and orphan-counter-penalty
         // were wrongly firing; both now require CandidateIsNotNounLike so noun-primary words are exempt
         yield return ["疑いだしたらキリはない", "キリ", 1383800, (byte)5];
+
+        // なの → expression "that's the way it is" (2425930), not nano- prefix (1090530)
+        // "fem" in JMDict POS [exp, fem, col] was incorrectly mapped to PartOfSpeech.Name, triggering
+        // the -50 name penalty; fix: "fem"/"masc"/"male" are register markers, not name-type tags
+        yield return ["あなたたち生き人形なの", "なの", 2425930, (byte)0];
+        yield return ["何をご所望なのかな", "なの", 2425930, (byte)0];
+        yield return ["あんたはその程度の執事なのかい", "なの", 2425930, (byte)0];
+
+        // なのに → conjunction "and yet; despite this" (2395490)
+        // SpecialCases2 merges Sudachi's なの+に into なのに before form scoring
+        yield return ["はずなのに忘れてた", "なのに", 2395490, (byte)0];
+
+        // なので → conjunction/particle "because; since" (2827864)
+        // SpecialCases2 merges Sudachi's なの+で into なので before form scoring
+        yield return ["降りてもカードを晒すルールなので互いの手札が晒される", "なので", 2827864, (byte)0];
+
+        // なく (adverbial form of ない) → ない (1529520), not NaK chemical (2617400)
+        // NaK's reading ナク is phonetically identical to なく; the conjugated-identity
+        // penalty must fire for pure kana script differences to suppress false matches.
+        yield return ["気配といっても曖昧な何かではなく、単に落ち葉がかすれる微かな音が聞こえただけだ。", "なく", 1529520, (byte)1];
+
+        // チックショー (colloquial geminated form of ちくしょう) → 畜生 (1422200)
+        // Sudachi splits into チック(suffix)+ショー(noun); user_dic + NormalizedForm lookup fix recombines
+        yield return ["チックショー", "チックショー", 1422200, (byte)1];
+
+        // さん after a name should resolve to the honorific suffix (1005340), not the numeral 三 (1579350)
+        // ReclassifyOrphanedSuffixes now preserves Suffix POS for さん, and Suffix tokens skip the
+        // verb-fallback comparison that was selecting the high-frequency numeral
+        yield return ["やっと会えました。待ってましたよ、桐島玲さん", "さん", 1005340, (byte)0];
+
+        // 様 disambiguation: さま (honorific suffix, 1545790) vs よう (appearance/manner, 1605840)
+        // After removing jiten priority from 1605840, context must drive the choice.
+        // Honorific さま: after a katakana name or polite pronoun
+        yield return ["私は今日からケイト様にお仕えする生き人形です", "様", 1545790, (byte)0];
+        yield return ["田中様にご連絡ください", "様", 1545790, (byte)0];
+        yield return ["どなた様でございましょうか", "様", 1545790, (byte)0];
+        // よう: appearance/manner after demonstratives or nouns (non-honorific context)
+        yield return ["この様に話す", "様", 1605840, (byte)0];
+        yield return ["そんな様では困る", "様", 1605840, (byte)0];
+        yield return ["生き物の様に動く", "様", 1605840, (byte)0];
     }
     
     [Theory]

@@ -130,6 +130,7 @@ public partial class MorphologicalAnalyser
                     {
                         // Successful steal - merge base + そう
                         currentWord.Text = stealCandidate;
+                        currentWord.Reading += WanaKana.ToKatakana("そう");
                         if (currentPOS == PartOfSpeech.Noun)
                         {
                             currentWord.DictionaryForm = currentDictForm + "する";
@@ -168,6 +169,8 @@ public partial class MorphologicalAnalyser
                     if (stealForms.Any(f => f.Text == stealTarget))
                     {
                         currentWord.Text = stealCandidate;
+                        currentWord.EndOffset = nextWord.EndOffset;
+                        currentWord.Reading += nextWord.Reading;
                         if (currentPOS == PartOfSpeech.Noun)
                         {
                             currentWord.DictionaryForm = currentDictForm + "する";
@@ -247,6 +250,8 @@ public partial class MorphologicalAnalyser
                 if (merged)
                 {
                     currentWord.Text = candidateText;
+                    currentWord.EndOffset = nextWord.EndOffset;
+                    currentWord.Reading += nextWord.Reading;
                     currentWord.PartOfSpeech = currentPOS;
                     if (newDictForm != null)
                         currentWord.DictionaryForm = newDictForm;
@@ -302,10 +307,12 @@ public partial class MorphologicalAnalyser
                     if (!PrefixCombineExclusions.Contains(combinedText) &&
                         HasCompoundLookup(combinedText))
                     {
+                        var prefixStart = currentWord.StartOffset;
                         currentWord = new WordInfo(nextWord);
                         currentWord.Text = combinedText;
                         currentWord.DictionaryForm = combinedText;
                         currentWord.NormalizedForm = combinedText;
+                        currentWord.StartOffset = prefixStart;
                         if (nextWord.PartOfSpeech is PartOfSpeech.Verb or PartOfSpeech.IAdjective)
                             currentWord.PartOfSpeech = PartOfSpeech.Noun;
                         newList.Add(currentWord);
@@ -318,15 +325,18 @@ public partial class MorphologicalAnalyser
                     if (!string.IsNullOrEmpty(nextWord.Reading))
                     {
                         var readingHira = KanaConverter.ToHiragana(nextWord.Reading);
-                        if (readingHira != nextWord.Text && readingHira != combinedText)
+                        if (readingHira != nextWord.Text && readingHira != combinedText
+                            && !HasCompoundLookup(nextWord.Text))
                         {
                             var readingCombined = currentWord.Text + readingHira;
                             if (!PrefixCombineExclusions.Contains(readingCombined) && HasCompoundLookup(readingCombined))
                             {
+                                var prefixStart = currentWord.StartOffset;
                                 currentWord = new WordInfo(nextWord);
                                 currentWord.Text = combinedText;
                                 currentWord.DictionaryForm = readingCombined;
                                 currentWord.NormalizedForm = readingCombined;
+                                currentWord.StartOffset = prefixStart;
                                 newList.Add(currentWord);
                                 i += 2;
                                 continue;
@@ -350,10 +360,13 @@ public partial class MorphologicalAnalyser
                             {
                                 var combinedWord = new WordInfo(nextWord);
                                 combinedWord.Text = partialText;
+                                combinedWord.StartOffset = currentWord.StartOffset;
+                                combinedWord.EndOffset = nextWord.StartOffset >= 0 ? nextWord.StartOffset + len : -1;
                                 newList.Add(combinedWord);
 
                                 var remainder = new WordInfo(nextWord);
                                 remainder.Text = nextWord.Text[len..];
+                                remainder.StartOffset = nextWord.StartOffset >= 0 ? nextWord.StartOffset + len : -1;
                                 newList.Add(remainder);
 
                                 i += 2;
@@ -391,8 +404,10 @@ public partial class MorphologicalAnalyser
                 AmountCombinations.Combinations.Contains((currentWord.Text, nextWord.Text)))
             {
                 var text = currentWord.Text + nextWord.Text;
+                var startOff = currentWord.StartOffset;
                 currentWord = new WordInfo(nextWord);
                 currentWord.Text = text;
+                currentWord.StartOffset = startOff;
                 currentWord.PartOfSpeech = PartOfSpeech.Noun;
             }
             else
@@ -421,6 +436,8 @@ public partial class MorphologicalAnalyser
             if (currentWord.Text.EndsWith("っ") && nextWord.Text.StartsWith("て"))
             {
                 currentWord.Text += nextWord.Text;
+                currentWord.EndOffset = nextWord.EndOffset;
+                currentWord.Reading += nextWord.Reading;
             }
             else
             {
@@ -466,6 +483,8 @@ public partial class MorphologicalAnalyser
 
             {
                 currentWord.Text += nextWord.Text;
+                currentWord.EndOffset = nextWord.EndOffset;
+                currentWord.Reading += nextWord.Reading;
             }
             else
             {
@@ -497,6 +516,8 @@ public partial class MorphologicalAnalyser
                 previousWord.PartOfSpeech is PartOfSpeech.Verb or PartOfSpeech.IAdjective or PartOfSpeech.Auxiliary)
             {
                 previousWord.Text += currentWord.Text;
+                previousWord.EndOffset = currentWord.EndOffset;
+                previousWord.Reading += currentWord.Reading;
                 combined = true;
             }
 
@@ -535,6 +556,8 @@ public partial class MorphologicalAnalyser
                     currentWord.DictionaryForm is "ある" or "有る")
                 {
                     previousWord.Text = "で" + currentWord.Text;
+                    previousWord.EndOffset = currentWord.EndOffset;
+                    previousWord.Reading += currentWord.Reading;
                     previousWord.PartOfSpeech = currentWord.PartOfSpeech;
                     previousWord.DictionaryForm = "である";
                 }
@@ -583,6 +606,8 @@ public partial class MorphologicalAnalyser
                )
             {
                 previousWord.Text += currentWord.Text;
+                previousWord.EndOffset = currentWord.EndOffset;
+                previousWord.Reading += currentWord.Reading;
                 combined = true;
             }
 
@@ -622,6 +647,8 @@ public partial class MorphologicalAnalyser
                  isAdjectivalSuffix))
             {
                 currentWord.Text += nextWord.Text;
+                currentWord.EndOffset = nextWord.EndOffset;
+                currentWord.Reading += nextWord.Reading;
             }
             else
             {
@@ -658,6 +685,8 @@ public partial class MorphologicalAnalyser
                         wordInfos[i - 1].PartOfSpeech == PartOfSpeech.Pronoun && wordInfos[i - 1].Text != "貴様")))
             {
                 currentWord.Text += nextWord.Text;
+                currentWord.EndOffset = nextWord.EndOffset;
+                currentWord.Reading += nextWord.Reading;
             }
             // Handle がったり misparsed as adverb after adjective stem (e.g., 怖がったり, 悲しがったり)
             // Sudachi sometimes parses these as: adj-stem + がったり (adverb) instead of correctly splitting
@@ -667,6 +696,8 @@ public partial class MorphologicalAnalyser
                      && currentWord.DictionaryForm.EndsWith("い"))
             {
                 currentWord.Text += nextWord.Text;
+                currentWord.EndOffset = nextWord.EndOffset;
+                currentWord.Reading += nextWord.Reading;
             }
             else
             {
@@ -687,8 +718,8 @@ public partial class MorphologicalAnalyser
                 continue;
 
             // じまい (仕舞い) is a genuine suffix that attaches to verb ず-forms (e.g., わからずじまい)
-            // ちゃん is always the familiar-person suffix, never reclassified (avoids matching 父)
-            if (wordInfos[i].DictionaryForm is "じまい" or "仕舞い" or "ちゃん")
+            // Honorific suffixes (さん/くん/ちゃん/様/殿/氏) are always person-title suffixes, never reclassified
+            if (wordInfos[i].DictionaryForm is "じまい" or "仕舞い" or "ちゃん" or "さん" or "くん" or "様" or "殿" or "氏")
                 continue;
 
             var prev = wordInfos[i - 1].PartOfSpeech;
@@ -696,8 +727,10 @@ public partial class MorphologicalAnalyser
                 continue;
 
             // Adjectival suffixes (形容詞的) like くさい, らしい, っぽい should keep their POS
-            // so the parser's Adjectival section check routes them through the verb/adj branch
-            if (wordInfos[i].PartOfSpeechSection1 == PartOfSpeechSection.Adjectival)
+            // so the parser's Adjectival section check routes them through the verb/adj branch.
+            // NaAdjectiveLike (形状詞的) like 気 can start compound expressions (e.g. 気を引き締める)
+            // so don't mark them as reclassified — that would block the compound detection window.
+            if (wordInfos[i].PartOfSpeechSection1 is PartOfSpeechSection.Adjectival or PartOfSpeechSection.NaAdjectiveLike)
                 continue;
 
             wordInfos[i].PartOfSpeech = PartOfSpeech.CommonNoun;
@@ -727,6 +760,8 @@ public partial class MorphologicalAnalyser
             {
                 WordInfo combinedWord = new WordInfo(currentWord);
                 combinedWord.Text = currentWord.Text + wordInfos[i + 1].Text + wordInfos[i + 2].Text;
+                combinedWord.EndOffset = wordInfos[i + 2].EndOffset;
+                combinedWord.Reading = currentWord.Reading + wordInfos[i + 1].Reading + wordInfos[i + 2].Reading;
                 combinedWord.PartOfSpeech = PartOfSpeech.Expression;
                 newList.Add(combinedWord);
                 i += 3;
@@ -747,6 +782,8 @@ public partial class MorphologicalAnalyser
                 {
                     WordInfo combinedWord = new WordInfo(currentWord);
                     combinedWord.Text = combinedText;
+                    combinedWord.EndOffset = nextWord.EndOffset;
+                    combinedWord.Reading = currentWord.Reading + nextWord.Reading;
                     newList.Add(combinedWord);
                     i += 2;
                     continue;
@@ -778,6 +815,8 @@ public partial class MorphologicalAnalyser
                 if (nextWord.Text == "ば" && currentWord.PartOfSpeech == PartOfSpeech.Verb)
                 {
                     currentWord.Text += nextWord.Text;
+                    currentWord.EndOffset = nextWord.EndOffset;
+                    currentWord.Reading += nextWord.Reading;
                     newList.Add(currentWord);
                     i++;
                     continue;
@@ -792,6 +831,8 @@ public partial class MorphologicalAnalyser
                         var merged = new WordInfo(currentWord)
                         {
                             Text = currentWord.Text + nextWord.Text,
+                            EndOffset = nextWord.EndOffset,
+                            Reading = currentWord.Reading + nextWord.Reading,
                             DictionaryForm = currentWord.Text + nextWord.Text
                         };
                         if (sc.Item3 != null)
@@ -850,6 +891,9 @@ public partial class MorphologicalAnalyser
                         var merged = new WordInfo(next)
                         {
                             Text = word.Text + next.Text,
+                            StartOffset = word.StartOffset,
+                            EndOffset = next.EndOffset,
+                            Reading = word.Reading + next.Reading,
                             DictionaryForm = "となる",
                             NormalizedForm = "なる"
                         };

@@ -146,7 +146,7 @@
 </script>
 
 <template>
-  <div class="relative">
+  <div class="relative" :class="isCompact ? 'max-w-80' : ''">
     <div
       v-if="showIgnoreOverlay"
       class="absolute inset-0 z-50 flex items-center justify-center backdrop-blur-lg bg-black/50 rounded-lg ignore-overlay"
@@ -386,7 +386,7 @@
                   </Tooltip>
                 </template>
                 <div v-if="!hideControl" class="mt-4">
-                  <div class="flex flex-col md:flex-row gap-2" :class="{ 'justify-center': isCompact }">
+                  <div class="flex gap-2" :class="[isCompact ? 'flex-row' : 'flex-col md:flex-row', { 'justify-center': isCompact }]">
                     <Tooltip content="Details">
                       <Button
                         as="router-link"
@@ -414,7 +414,7 @@
                       />
                     </Tooltip>
                     <Button
-                      v-if="!isCompact && displayAdminFunctions"
+                      v-if="!isCompact && authStore.isAdmin && displayAdminFunctions"
                       as="router-link"
                       :to="`/dashboard/media/${deck.deckId}`"
                       label="Edit"

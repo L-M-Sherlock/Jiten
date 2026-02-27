@@ -37,6 +37,9 @@ public partial class MorphologicalAnalyser
     [GeneratedRegex(@"(?<!い)っしょ[ーう]?(?=[\s\n]|$)")]
     private static partial Regex ColloquialSshoRegex();
 
+    [GeneratedRegex(@"(?<=[\u4E00-\u9FAF])番っ")]
+    private static partial Regex BanCompoundTsuRegex();
+
     [GeneratedRegex(@"(?<=[\p{IsHiragana}\p{IsKatakana}\p{IsCJKUnifiedIdeographs}]{2})…+(?=[^\r\n…])")]
     private static partial Regex MidSentenceEllipsisRegex();
 
@@ -73,6 +76,7 @@ public partial class MorphologicalAnalyser
         text = text.Replace("もやる", $"も{_stopToken}やる");
         text = HayaruWithoutGaRegex().Replace(text, $"は{_stopToken}やる");
         text = text
+            .Replace("ええんや", $"ええ{_stopToken}んや")
             .Replace("べや", $"べ{_stopToken}や")
             .Replace("はいい", $"は{_stopToken}いい")
             .Replace("元国王", $"元{_stopToken}国王")
@@ -85,6 +89,7 @@ public partial class MorphologicalAnalyser
         text = DeNaiCompoundRegex().Replace(text, $"$1{_stopToken}出$2");
         text = text.Replace("ぶっち切", "ぶち切");
         text = EmphaticTsuRegex().Replace(text, $"{_stopToken}$1");
+        text = BanCompoundTsuRegex().Replace(text, $"番{_stopToken}っ");
 
         text = text
             .Replace("水魔法", $"水{_stopToken}魔法")
@@ -105,11 +110,31 @@ public partial class MorphologicalAnalyser
         text = text
             .Replace("来イ", "来い")
             .Replace("とんでもねえ", "とんでもない")
-            .Replace("しょうがねえ", "しょうがない");
+            .Replace("しょうがねえ", "しょうがない")
+            .Replace("せぇ", "さい");
 
         text = ColloquialSshoRegex().Replace(text, $"{_stopToken}っしょ");
         text = MidSentenceEllipsisRegex().Replace(text, "");
         text = text.Replace("…\r", "。\r").Replace("…\n", "。\n");
+    }
+
+    private static void ComputeTokenOffsets(string originalText, List<WordInfo> wordInfos)
+    {
+        var text = originalText.Replace("\r", "").Replace("\n", "");
+        int pos = 0;
+        foreach (var word in wordInfos)
+        {
+            if (string.IsNullOrEmpty(word.Text) || word.PartOfSpeech == PartOfSpeech.BlankSpace)
+                continue;
+
+            int found = text.IndexOf(word.Text, pos, StringComparison.Ordinal);
+            if (found >= 0)
+            {
+                word.StartOffset = found;
+                word.EndOffset = found + word.Text.Length;
+                pos = word.EndOffset;
+            }
+        }
     }
 
     private List<SentenceInfo> SplitIntoSentences(string text, List<WordInfo> wordInfos)
@@ -160,11 +185,10 @@ public partial class MorphologicalAnalyser
         if (sentenceData.Count == 0)
             return [];
 
-        // Phase 2: Assign words using linear position tracking
-        // Instead of O(n*m) repeated IndexOf per sentence, we do O(n+m):
-        // - One IndexOf per word in the global text (O(n) total across all words)
-        // - O(1) sentence lookup per word using position boundaries
-        int globalPos = 0;
+        // Phase 2: Assign words using precomputed offsets
+        // Token offsets were computed once from raw Sudachi output (before pipeline stages),
+        // then propagated through all merge/split stages. This avoids fragile IndexOf matching
+        // that breaks when stages modify token Text (e.g., RepairVowelElongation strips ー).
         int sentenceIdx = 0;
 
         foreach (var word in wordInfos)
@@ -172,10 +196,11 @@ public partial class MorphologicalAnalyser
             if (string.IsNullOrEmpty(word.Text) || word.PartOfSpeech == PartOfSpeech.BlankSpace)
                 continue;
 
-            // Find word in the global text starting from current position
-            int wordPos = text.IndexOf(word.Text, globalPos, StringComparison.Ordinal);
-            if (wordPos < 0)
+            if (word.StartOffset < 0 || word.EndOffset < 0)
                 continue;
+
+            int wordPos = word.StartOffset;
+            int wordEnd = word.EndOffset;
 
             // Advance to the correct sentence based on word position
             while (sentenceIdx < sentenceData.Count - 1)
@@ -188,7 +213,6 @@ public partial class MorphologicalAnalyser
 
             var (sentence, sentenceStart) = sentenceData[sentenceIdx];
             int sentenceEnd = sentenceStart + sentence.Text.Length;
-            int wordEnd = wordPos + word.Text.Length;
 
             // Handle words that span sentence boundaries - merge sentences
             while (wordEnd > sentenceEnd && sentenceIdx + 1 < sentenceData.Count)
@@ -201,9 +225,8 @@ public partial class MorphologicalAnalyser
 
             // Calculate position within the sentence and add word
             int posInSentence = wordPos - sentenceStart;
-            sentence.Words.Add((word, posInSentence, word.Text.Length));
-
-            globalPos = wordEnd;
+            int spanLength = wordEnd - wordPos;
+            sentence.Words.Add((word, posInSentence, spanLength));
         }
 
         return sentenceData.Select(s => s.info).ToList();

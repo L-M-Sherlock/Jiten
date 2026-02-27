@@ -136,11 +136,14 @@ public partial class MorphologicalAnalyser
             batches.Add(currentBatch); // Last batch
         }
 
+        allWordInfos = null!;
+
         // Process each batch through normal pipeline
         var results = new List<List<SentenceInfo>>();
         for (int i = 0; i < batches.Count && i < originalTexts.Count; i++)
         {
             var wordInfos = batches[i];
+            batches[i] = null!;
 
             if (morphemesOnly)
             {
@@ -148,6 +151,7 @@ public partial class MorphologicalAnalyser
                 continue;
             }
 
+            ComputeTokenOffsets(originalTexts[i], wordInfos);
             wordInfos = RunPipeline(wordInfos, diagnostics);
 
             results.Add(SplitIntoSentences(originalTexts[i], wordInfos));

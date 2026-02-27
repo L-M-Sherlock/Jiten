@@ -282,7 +282,7 @@ internal static class TransitionRuleEngine
                 ScoringCondition.CandidateIsNounLike =>
                     ctx.CandidatePOS.Any(p => p is PartOfSpeech.Noun or PartOfSpeech.CommonNoun
                                                    or PartOfSpeech.NaAdjective or PartOfSpeech.Pronoun
-                                                   or PartOfSpeech.Name),
+                                                   or PartOfSpeech.Name or PartOfSpeech.NominalAdjective),
 
                 ScoringCondition.CandidateIsNaAdj =>
                     ctx.CandidatePOS.Contains(PartOfSpeech.NaAdjective),
@@ -452,7 +452,14 @@ internal static class TransitionRuleEngine
                 ScoringCondition.CandidateIsNotNounLike =>
                     !ctx.CandidatePOS.Any(p => p is PartOfSpeech.Noun or PartOfSpeech.CommonNoun
                                                    or PartOfSpeech.NaAdjective or PartOfSpeech.Pronoun
-                                                   or PartOfSpeech.Name),
+                                                   or PartOfSpeech.Name or PartOfSpeech.NominalAdjective),
+
+                ScoringCondition.CandidateIsHonorific =>
+                    TransitionRuleSets.HonorificSuffixes.Contains(ctx.CandidateText) &&
+                    ctx.CandidatePOS.Any(p => p is PartOfSpeech.Suffix or PartOfSpeech.NounSuffix),
+
+                ScoringCondition.PrevIsName =>
+                    ctx.PrevPOS?.Contains(PartOfSpeech.Name) == true,
 
                 _ => false
             };

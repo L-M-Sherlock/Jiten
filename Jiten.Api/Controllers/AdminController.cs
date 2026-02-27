@@ -36,6 +36,40 @@ public partial class AdminController(
     ILogger<AdminController> logger)
     : ControllerBase
 {
+    [HttpGet("duplicate-check")]
+    public async Task<IResult> DuplicateCheck([FromQuery] string? title, [FromQuery] MediaType? mediaType)
+    {
+        if (string.IsNullOrWhiteSpace(title) || title.Length < 2)
+            return Results.Ok(new List<DuplicateCheckDeckDto>());
+
+        var normalisedTitle = title.Trim();
+
+        var query = dbContext.DeckTitles.AsNoTracking()
+            .Where(dt => EF.Functions.ILike(dt.Title, $"%{normalisedTitle}%"));
+
+        if (mediaType.HasValue)
+            query = query.Where(dt => dt.Deck!.MediaType == mediaType.Value);
+
+        var decks = await query
+            .OrderBy(dt => dt.Title.Length)
+            .Take(10)
+            .Select(dt => new DuplicateCheckDeckDto
+            {
+                DeckId = dt.DeckId,
+                Title = dt.Title,
+                MediaType = dt.Deck!.MediaType
+            })
+            .ToListAsync();
+
+        decks = decks
+            .GroupBy(d => d.DeckId)
+            .Select(g => g.First())
+            .Take(5)
+            .ToList();
+
+        return Results.Ok(decks);
+    }
+
     [HttpGet("search-media")]
     public async Task<IResult> SearchMedia(string provider, string query, string? author)
     {
@@ -48,6 +82,7 @@ public partial class AdminController(
                 await MetadataProviderHelper.GoogleBooksSearchApi(query + (!string.IsNullOrEmpty(author) ? $"+inauthor:{author}" : "")),
             "Vndb" => await MetadataProviderHelper.VndbSearchApi(query),
             "Igdb" => await MetadataProviderHelper.IgdbSearchApi(config["IgdbClientId"]!, config["IgdbClientSecret"]!, query),
+            "Bookmeter" => await MetadataProviderHelper.BookmeterSearchApi(query),
             _ => new List<Metadata>()
         });
     }

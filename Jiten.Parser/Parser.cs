@@ -156,6 +156,14 @@ namespace Jiten.Parser
                     if (HonorificExclusions.Contains(current.Text))
                         continue;
 
+                    // Pure-katakana nouns are almost always foreign names when followed by a person honorific.
+                    // Sudachi doesn't classify foreign names as proper nouns, so we skip the strict POS check.
+                    if (current.PartOfSpeech == PartOfSpeech.Noun && WanaKana.IsKatakana(current.Text))
+                    {
+                        current.IsPersonNameContext = true;
+                        continue;
+                    }
+
                     if (!PosMapper.IsNameLikeSudachiNoun(
                                                          current.PartOfSpeech,
                                                          current.PartOfSpeechSection1,
@@ -528,7 +536,6 @@ namespace Jiten.Parser
             }
 
             var corrected = await ApplyAdjacentScoring(sentences, processedWithMargins, diagnostics);
-
             return ExcludeFinalMisparses(corrected);
         }
 
@@ -588,6 +595,7 @@ namespace Jiten.Parser
                 var text = texts[textIndex];
                 var deck = await ProcessSentencesToDeck(sentences, text, deconjugator, storeRawText, predictDifficulty, mediatype);
                 decks.Add(deck);
+                batchedSentences[textIndex] = null!;
             }
 
             timer.Stop();
@@ -929,7 +937,7 @@ namespace Jiten.Parser
                             }
                             else if (wordData.wordInfo.PartOfSpeech is PartOfSpeech.Pronoun or PartOfSpeech.Conjunction
                                      or PartOfSpeech.Interjection or PartOfSpeech.Particle or PartOfSpeech.Adverb
-                                     or PartOfSpeech.NaAdjective)
+                                     or PartOfSpeech.NaAdjective or PartOfSpeech.Suffix or PartOfSpeech.NounSuffix)
                             {
                                 processedWord = nounResult.word;
                                 resolvedMargin = nounResult.margin;
@@ -993,7 +1001,14 @@ namespace Jiten.Parser
                                     }
                                 }
 
-                                if (verbFallback is { success: true, word: not null } && nounResult.word != null)
+                                bool nounIsPureNameEntry = nounResult.word != null &&
+                                    nounResult.word.PartsOfSpeech.All(p => p is PartOfSpeech.Name or PartOfSpeech.Unknown);
+                                if (wordData.wordInfo.IsPersonNameContext && nounIsPureNameEntry)
+                                {
+                                    processedWord = nounResult.word;
+                                    resolvedMargin = nounResult.margin;
+                                }
+                                else if (verbFallback is { success: true, word: not null } && nounResult.word != null)
                                 {
                                     var bothCache = await JmDictCache.GetWordsAsync(
                                                                                     [nounResult.word.WordId, verbFallback.word.WordId]);
@@ -1195,6 +1210,17 @@ namespace Jiten.Parser
             {
                 var collected = LookupCandidateCollector.CollectIds(_lookups, text,
                                                                     includeKanaNormalized: true, includeLongVowelStripped: true);
+
+                // Also look up Sudachi's NormalizedForm when it differs from the surface (e.g., チックショー → チクショー for 畜生)
+                if (!string.IsNullOrEmpty(wordData.wordInfo.NormalizedForm) &&
+                    wordData.wordInfo.NormalizedForm != text)
+                {
+                    var normalizedCollected = LookupCandidateCollector.CollectIds(_lookups, wordData.wordInfo.NormalizedForm,
+                                                                                  includeKanaNormalized: true, includeLongVowelStripped: true);
+                    if (normalizedCollected.Count > 0)
+                        collected = collected.Concat(normalizedCollected).Distinct().ToList();
+                }
+
                 candidates = collected.Count > 0 ? collected : null;
 
                 if (text.Contains('ー'))
@@ -2956,11 +2982,7 @@ namespace Jiten.Parser
                                                                          PrevResolvedPOS: prevResult?.PartsOfSpeech,
                                                                          NextResolvedPOS: nextResult?.PartsOfSpeech,
                                                                          PrevText: prevInfo?.Text,
-                                                                         NextText: nextInfo?.Text,
-                                                                         PrevWordId: prevResult?.WordId,
-                                                                         NextWordId: nextResult?.WordId,
-                                                                         IsSentenceInitial: i == 0,
-                                                                         IsSentenceFinal: i == sentenceWords.Count - 1);
+                                                                         NextText: nextInfo?.Text);
 
                     var scoringContext = FormScoringContext.Create(
                                                                    currentInfo.Text, currentInfo.DictionaryForm, currentInfo.NormalizedForm,
@@ -3047,13 +3069,14 @@ namespace Jiten.Parser
 
                     if (changed && newBest != null)
                     {
+                        bool wordIdChanged = newBest.Word.WordId != currentResult.WordId;
                         var newResult = new DeckWord
                                         {
                                             WordId = newBest.Word.WordId, OriginalText = currentInfo.Text,
                                             ReadingIndex = newBest.ReadingIndex, Occurrences = currentResult.Occurrences,
                                             Conjugations = newBest.DeconjForm?.Process is ["casual kind request"] && newBest.Word.PartsOfSpeech.Contains("adj-na")
                                                 ? []
-                                                : newBest.DeconjForm?.Process.ToList() ?? currentResult.Conjugations,
+                                                : newBest.DeconjForm?.Process.ToList() ?? (wordIdChanged ? [] : currentResult.Conjugations),
                                             PartsOfSpeech = newBest.Word.CachedPOS, Origin = newBest.Word.Origin,
                                             SudachiReading = currentInfo.Reading, SudachiPartOfSpeech = currentInfo.PartOfSpeech
                                         };

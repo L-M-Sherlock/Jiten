@@ -6,9 +6,10 @@
   import InputText from 'primevue/inputtext';
   import Toast from 'primevue/toast';
   import { useToast } from 'primevue/usetoast';
-  import type { Metadata } from '~/types';
+  import type { Metadata, DuplicateCheckDeckDto } from '~/types';
   import { MediaType } from '~/types';
   import { getChildrenCountText, getMediaTypeText } from '~/utils/mediaTypeMapper';
+  import { getLinkTypeText } from '~/utils/linkTypeMapper';
   import SearchDialog from '~/components/dashboard/SearchDialog.vue';
 
   useHead({
@@ -33,8 +34,25 @@
 
   const selectedFile = ref<File | null>(null);
   const originalTitle = ref('');
+  const duplicateDecks = ref<DuplicateCheckDeckDto[]>([]);
+
+  let duplicateTimeout: ReturnType<typeof setTimeout> | null = null;
+  watch(originalTitle, (newTitle) => {
+    if (duplicateTimeout) clearTimeout(duplicateTimeout);
+    if (newTitle.trim().length < 2) {
+      duplicateDecks.value = [];
+      return;
+    }
+    duplicateTimeout = setTimeout(async () => {
+      duplicateDecks.value = await $api<DuplicateCheckDeckDto[]>('admin/duplicate-check', {
+        query: { title: newTitle.trim(), mediaType: selectedMediaType.value },
+      }) ?? [];
+    }, 500);
+  });
+
   const romajiTitle = ref('');
   const englishTitle = ref('');
+  const romanizing = ref(false);
   const releaseDate = ref<Date>();
   const description = ref('');
   const rating = ref(0);
@@ -90,6 +108,7 @@
       URL.revokeObjectURL(coverImageObjectUrl.value);
       coverImageObjectUrl.value = null;
     }
+    if (duplicateTimeout) clearTimeout(duplicateTimeout);
   });
 
   function selectMediaType(mediaType: MediaType) {
@@ -211,6 +230,22 @@
 
   const currentProvider = ref('');
 
+  async function autoRomanize() {
+    if (!originalTitle.value) return;
+    romanizing.value = true;
+    try {
+      const data = await $api<{ romaji: string }>('utils/romanize', {
+        method: 'POST',
+        body: { title: originalTitle.value },
+      });
+      romajiTitle.value = data.romaji;
+    } catch {
+      showToast('error', 'Error', 'Failed to auto-romanize title');
+    } finally {
+      romanizing.value = false;
+    }
+  }
+
   function goBack() {
     if (currentScreen.value === SCREEN_FILE_UPLOAD) {
       currentScreen.value = SCREEN_MEDIA_TYPE;
@@ -228,6 +263,7 @@
       selectedMetadata.value = null;
       subdecks.value = [];
       rating.value = 0;
+      duplicateDecks.value = [];
     }
   }
 
@@ -409,10 +445,28 @@
                 <div class="mb-4">
                   <label class="block text-sm font-medium mb-1">Original Title</label>
                   <InputText v-model="originalTitle" class="w-full" />
+                  <div v-if="duplicateDecks.length > 0" class="mt-2">
+                    <p class="text-sm font-semibold text-orange-600 dark:text-orange-400 mb-1">This media may already exist:</p>
+                    <div v-for="deck in duplicateDecks" :key="deck.deckId" class="flex items-center gap-2 text-sm py-1">
+                      <NuxtLink :to="`/decks/media/${deck.deckId}/detail`" class="text-primary hover:underline" target="_blank">
+                        {{ deck.title }}
+                      </NuxtLink>
+                    </div>
+                  </div>
                 </div>
                 <div class="mb-4">
                   <label class="block text-sm font-medium mb-1">Romaji Title</label>
-                  <InputText v-model="romajiTitle" class="w-full" />
+                  <div class="flex gap-2">
+                    <InputText v-model="romajiTitle" class="flex-1" />
+                    <Button
+                      v-tooltip.top="'Auto-romanize from original title'"
+                      :disabled="!originalTitle || romanizing"
+                      @click="autoRomanize"
+                    >
+                      <Icon v-if="!romanizing" name="material-symbols-light:translate" size="1.5em" />
+                      <Icon v-else name="line-md:loading-loop" size="1.5em" />
+                    </Button>
+                  </div>
                 </div>
                 <div class="mb-4">
                   <label class="block text-sm font-medium mb-1">English Title</label>
@@ -421,6 +475,19 @@
                 <div class="mb-4">
                   <label class="block text-sm font-medium mb-1">Release Date</label>
                   <DatePicker v-model="releaseDate" class="w-full" />
+                </div>
+                <div v-if="selectedMetadata?.links?.length" class="mb-4">
+                  <label class="block text-sm font-medium mb-1">Links</label>
+                  <div class="flex flex-wrap gap-2">
+                    <a
+                      v-for="link in selectedMetadata.links"
+                      :key="link.url"
+                      :href="link.url"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      class="text-sm text-primary underline"
+                    >{{ getLinkTypeText(link.linkType) }}</a>
+                  </div>
                 </div>
                 <div class="mb-4">
                   <label class="block text-sm font-medium mb-1">Description</label>
@@ -490,6 +557,7 @@
                 <template v-else-if="selectedMediaType === MediaType.Novel || selectedMediaType === MediaType.NonFiction">
                   <Button label="Anilist" @click="searchAPI('AnilistNovel')" />
                   <Button label="Google Books" @click="searchAPI('GoogleBooks')" />
+                  <Button label="Bookmeter" @click="searchAPI('Bookmeter')" />
                 </template>
                 <template v-else-if="selectedMediaType === MediaType.VideoGame">
                   <Button label="IGDB" @click="searchAPI('Igdb')" />
