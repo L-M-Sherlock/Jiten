@@ -12,6 +12,7 @@ public static class SubtitleTextCleaner
     private static readonly Regex OnlyBracketsRegex = new(@"^\s*(?:" + BracketSegmentPattern + @"\s*)+$", RegexOptions.Compiled);
     private static readonly Regex PrefixBracketRegex = new(@"^\s*" + BracketSegmentPattern + @"\s*", RegexOptions.Compiled);
     private static readonly Regex MusicOnlyRegex = new(@"^[\s♪～〜ー—…・･]+$", RegexOptions.Compiled);
+    private static readonly Regex KanaOnlyRegex = new(@"^[\u3040-\u309F\u30A0-\u30FFー・･\s]+$", RegexOptions.Compiled);
 
     private static readonly string[] CueWords =
     [
@@ -82,8 +83,21 @@ public static class SubtitleTextCleaner
                 line = line[match.Length..].TrimStart(' ', '　', '/', '／', '・', '-', '–', '—', ':', '：');
             }
 
-            // Drop bracketed segments that look like SFX or non-spoken cues.
-            line = BracketSegmentRegex.Replace(line, match => CueRegex.IsMatch(match.Value) ? "" : match.Value);
+            // Drop bracketed segments that look like SFX or non-spoken cues, or kana-only furigana.
+            line = BracketSegmentRegex.Replace(line, match =>
+            {
+                if (CueRegex.IsMatch(match.Value))
+                    return "";
+
+                if (match.Value.Length >= 2)
+                {
+                    var inner = match.Value[1..^1].Trim();
+                    if (!string.IsNullOrEmpty(inner) && KanaOnlyRegex.IsMatch(inner))
+                        return "";
+                }
+
+                return match.Value;
+            });
 
             line = line.Trim();
             if (string.IsNullOrWhiteSpace(line))

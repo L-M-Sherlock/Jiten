@@ -1,6 +1,8 @@
 using System.Text;
 using System.Linq;
+using System.Text.RegularExpressions;
 using Jiten.Core;
+using Jiten.Core.Data;
 
 namespace Jiten.Parser;
 
@@ -13,6 +15,8 @@ public readonly record struct SubtitleKanaStats(long KanaCount, long DurationMs)
 
 public static class SubtitleKanaRateCalculator
 {
+    private static readonly Regex KanaTildeRegex = new(@"(?<=[\u3040-\u309F\u30A0-\u30FF])[～〜]+", RegexOptions.Compiled);
+
     public static async Task<SubtitleKanaStats> ComputeAsync(IEnumerable<SubtitleItem> items)
     {
         var intervals = new List<(int start, int end)>();
@@ -27,6 +31,10 @@ public static class SubtitleKanaRateCalculator
             intervals.Add((item.StartMs, item.EndMs));
 
             var spoken = SubtitleTextCleaner.StripNonSpoken(cleaned);
+            if (string.IsNullOrWhiteSpace(spoken))
+                continue;
+
+            spoken = KanaTildeRegex.Replace(spoken, "");
             if (string.IsNullOrWhiteSpace(spoken))
                 continue;
 
@@ -65,6 +73,9 @@ public static class SubtitleKanaRateCalculator
 
     private static int CountKana(WordInfo word)
     {
+        if (word.PartOfSpeech is PartOfSpeech.Symbol or PartOfSpeech.SupplementarySymbol or PartOfSpeech.BlankSpace)
+            return 0;
+
         var reading = word.Reading;
         if (string.IsNullOrEmpty(reading) || reading == "*")
             reading = word.Text;
