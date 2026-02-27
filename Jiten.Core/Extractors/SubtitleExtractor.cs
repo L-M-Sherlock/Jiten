@@ -85,7 +85,7 @@ public partial class SubtitleExtractor
             ".ass" or ".ssa" => await ParseAssItems(filePath),
             _ => []
         } is { Count: > 0 } rawItems
-            ? MergeDuplicateItems(CleanItemText(rawItems))
+            ? MergeDuplicateItems(CleanItemText(rawItems), maxGapMs: 200)
             : [];
     }
 
@@ -170,28 +170,62 @@ public partial class SubtitleExtractor
         return items;
     }
 
-    private static List<SubtitleItem> MergeDuplicateItems(IEnumerable<SubtitleItem> items)
+    private static List<SubtitleItem> MergeDuplicateItems(IEnumerable<SubtitleItem> items, int maxGapMs = 0)
     {
-        var merged = new List<SubtitleItem>();
-        foreach (var item in items.OrderBy(i => i.StartMs).ThenBy(i => i.EndMs))
+        var grouped = new Dictionary<string, List<(int start, int end)>>();
+        foreach (var item in items)
         {
-            if (merged.Count == 0)
+            if (!grouped.TryGetValue(item.Text, out var spans))
             {
-                merged.Add(item);
-                continue;
+                spans = [];
+                grouped[item.Text] = spans;
             }
 
-            var last = merged[^1];
-            if (item.Text == last.Text && item.StartMs <= last.EndMs)
-            {
-                merged[^1] = new SubtitleItem(last.StartMs, Math.Max(last.EndMs, item.EndMs), last.Text);
-                continue;
-            }
-
-            merged.Add(item);
+            spans.Add((item.StartMs, item.EndMs));
         }
 
-        return merged;
+        var mergedItems = new List<SubtitleItem>();
+        foreach (var (text, spans) in grouped)
+        {
+            spans.Sort((a, b) =>
+            {
+                var startCompare = a.start.CompareTo(b.start);
+                return startCompare != 0 ? startCompare : a.end.CompareTo(b.end);
+            });
+
+            var currentStart = spans[0].start;
+            var currentEnd = spans[0].end;
+
+            for (int i = 1; i < spans.Count; i++)
+            {
+                var (start, end) = spans[i];
+                if (start <= currentEnd + maxGapMs)
+                {
+                    currentEnd = Math.Max(currentEnd, end);
+                }
+                else
+                {
+                    mergedItems.Add(new SubtitleItem(currentStart, currentEnd, text));
+                    currentStart = start;
+                    currentEnd = end;
+                }
+            }
+
+            mergedItems.Add(new SubtitleItem(currentStart, currentEnd, text));
+        }
+
+        mergedItems.Sort((a, b) =>
+        {
+            var startCompare = a.StartMs.CompareTo(b.StartMs);
+            if (startCompare != 0)
+                return startCompare;
+            var endCompare = a.EndMs.CompareTo(b.EndMs);
+            if (endCompare != 0)
+                return endCompare;
+            return string.Compare(a.Text, b.Text, StringComparison.Ordinal);
+        });
+
+        return mergedItems;
     }
 
     private static bool TryParseSrtTimeRange(string line, out int startMs, out int endMs)
