@@ -692,8 +692,6 @@ public static class JmDictHelper
                 foreach (var form in nameEntry.Forms)
                     form.Text = form.Text.Replace("ゎ", "わ").Replace("ヮ", "わ");
 
-                DeduplicateForms(nameEntry);
-
                 // Check if this entry's WordId already exists in JMDict (true duplicate)
                 if (existingWordIds.Contains(nameEntry.WordId))
                 {
@@ -1559,8 +1557,6 @@ public static class JmDictHelper
                 foreach (var form in wordInfo.Forms)
                     form.Text = form.Text.Replace("ゎ", "わ").Replace("ヮ", "わ");
 
-                DeduplicateForms(wordInfo);
-
                 wordInfos.Add(wordInfo);
 
                 break;
@@ -1575,30 +1571,6 @@ public static class JmDictHelper
     private static JmDictWordForm NewForm(int wordId, int index, string text, JmDictFormType formType, string? rubyText = null)
         => new() { WordId = wordId, ReadingIndex = (short)index, Text = text,
                    RubyText = rubyText ?? text, FormType = formType, IsActiveInLatestSource = true };
-
-    private static void DeduplicateForms(JmDictWord wordInfo)
-    {
-        if (wordInfo.Forms.Count < 2)
-            return;
-
-        var seen = new HashSet<(JmDictFormType, string)>();
-        var deduped = new List<JmDictWordForm>(wordInfo.Forms.Count);
-
-        foreach (var form in wordInfo.Forms)
-        {
-            var key = (form.FormType, form.Text);
-            if (seen.Add(key))
-                deduped.Add(form);
-        }
-
-        if (deduped.Count == wordInfo.Forms.Count)
-            return;
-
-        for (int i = 0; i < deduped.Count; i++)
-            deduped[i].ReadingIndex = (short)i;
-
-        wordInfo.Forms = deduped;
-    }
 
     private static async Task<JmDictWord> ParseNameKEle(XmlReader reader, JmDictWord wordInfo)
     {
