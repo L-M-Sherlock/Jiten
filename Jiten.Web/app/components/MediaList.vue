@@ -69,6 +69,7 @@
     'uCoverage',
     'extRating',
     'dialoguePercentage',
+    'subtitleRate',
     'sentenceLength',
     'uKanji',
     'uWordCount',
@@ -259,6 +260,7 @@
 
   const updateOptions = () => {
     const showDialogueOptionMediaTypes = [MediaType.Novel, MediaType.VisualNovel, MediaType.WebNovel, MediaType.NonFiction];
+    const showSubtitleRateOptionMediaTypes = [MediaType.Anime, MediaType.Drama, MediaType.Movie, MediaType.Audio];
 
     if (mediaType.value == null || showDialogueOptionMediaTypes.includes(Number(mediaType.value))) {
       if (!sortByOptions.value.some((o) => o.value === 'dialoguePercentage')) {
@@ -269,6 +271,19 @@
         sortByOptions.value = sortByOptions.value.filter((o) => o.value !== 'dialoguePercentage');
       }
       if (sortBy.value === 'dialoguePercentage') {
+        sortBy.value = 'title';
+      }
+    }
+
+    if (mediaType.value == null || showSubtitleRateOptionMediaTypes.includes(Number(mediaType.value))) {
+      if (!sortByOptions.value.some((o) => o.value === 'subtitleRate')) {
+        sortByOptions.value.push({ label: 'Subtitle Mora/Min', value: 'subtitleRate' });
+      }
+    } else {
+      if (sortByOptions.value.some((o) => o.value === 'subtitleRate')) {
+        sortByOptions.value = sortByOptions.value.filter((o) => o.value !== 'subtitleRate');
+      }
+      if (sortBy.value === 'subtitleRate') {
         sortBy.value = 'title';
       }
     }

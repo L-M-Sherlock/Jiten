@@ -210,7 +210,7 @@ public class MediaDeckController(
     /// <param name="wordId">If set, only decks containing this word are returned.</param>
     /// <param name="readingIndex">Reading index associated with wordId.</param>
     /// <param name="titleFilter">Full‑text filter on title (supports romaji/english/japanese).</param>
-    /// <param name="sortBy">Sort field (title, difficulty, charCount, wordCount, sentenceLength, dialoguePercentage, uKanji, uWordCount, uKanjiOnce, filter, releaseDate, coverage, uCoverage, etc.).</param>
+    /// <param name="sortBy">Sort field (title, difficulty, charCount, wordCount, sentenceLength, dialoguePercentage, subtitleRate, uKanji, uWordCount, uKanjiOnce, filter, releaseDate, coverage, uCoverage, etc.).</param>
     /// <param name="sortOrder">Ascending or Descending.</param>
     /// <param name="status">Status (none, nostatus, fav, ignore, planning, ongoing, completed, dropped)</param>
     /// <param name="charCountMin"></param>
@@ -835,6 +835,11 @@ public class MediaDeckController(
                        .Where(d => !d.HideDialoguePercentage && d.DialoguePercentage != 0 && d.DialoguePercentage != 100)
                 : query.OrderByDescending(d => d.DialoguePercentage)
                        .Where(d => !d.HideDialoguePercentage && d.DialoguePercentage != 0 && d.DialoguePercentage != 100),
+            "subtitleRate" => sortOrder == SortOrder.Ascending
+                ? query.Where(d => d.SubtitleDurationMs > 0)
+                       .OrderBy(d => d.SubtitleMoraCount / (d.SubtitleDurationMs / 60000.0))
+                : query.Where(d => d.SubtitleDurationMs > 0)
+                       .OrderByDescending(d => d.SubtitleMoraCount / (d.SubtitleDurationMs / 60000.0)),
             "wordCount" => sortOrder == SortOrder.Ascending
                 ? query.OrderBy(d => d.WordCount)
                 : query.OrderByDescending(d => d.WordCount),
@@ -891,6 +896,11 @@ public class MediaDeckController(
                        .Where(p => p.Deck.DialoguePercentage != 0 && p.Deck.DialoguePercentage != 100)
                 : query.OrderByDescending(p => p.Deck.DialoguePercentage)
                        .Where(p => p.Deck.DialoguePercentage != 0 && p.Deck.DialoguePercentage != 100),
+            "subtitleRate" => sortOrder == SortOrder.Ascending
+                ? query.Where(p => p.Deck.SubtitleDurationMs > 0)
+                       .OrderBy(p => p.Deck.SubtitleMoraCount / (p.Deck.SubtitleDurationMs / 60000.0))
+                : query.Where(p => p.Deck.SubtitleDurationMs > 0)
+                       .OrderByDescending(p => p.Deck.SubtitleMoraCount / (p.Deck.SubtitleDurationMs / 60000.0)),
             "wordCount" => sortOrder == SortOrder.Ascending
                 ? query.OrderBy(p => p.Deck.WordCount)
                 : query.OrderByDescending(p => p.Deck.WordCount),
