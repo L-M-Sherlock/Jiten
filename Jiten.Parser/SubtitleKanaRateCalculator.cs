@@ -85,6 +85,8 @@ public static class SubtitleKanaRateCalculator
         {
             if (IsSokuon(rune))
                 continue;
+            if (IsSmallKana(rune))
+                continue;
             if (IsKana(rune))
                 count++;
         }
@@ -101,6 +103,14 @@ public static class SubtitleKanaRateCalculator
     private static bool IsSokuon(Rune rune)
     {
         return rune.Value is 0x3063 or 0x30C3;
+    }
+
+    private static bool IsSmallKana(Rune rune)
+    {
+        return rune.Value is 0x3041 or 0x3043 or 0x3045 or 0x3047 or 0x3049
+            or 0x3083 or 0x3085 or 0x3087 or 0x308E or 0x3095 or 0x3096
+            or 0x30A1 or 0x30A3 or 0x30A5 or 0x30A7 or 0x30A9
+            or 0x30E3 or 0x30E5 or 0x30E7 or 0x30EE or 0x30F5 or 0x30F6;
     }
 
     private static List<(int start, int end)> MergeIntervals(List<(int start, int end)> intervals)
