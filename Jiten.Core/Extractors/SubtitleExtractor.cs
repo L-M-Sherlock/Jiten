@@ -84,7 +84,9 @@ public partial class SubtitleExtractor
             ".srt" => await ParseSrtItems(filePath),
             ".ass" or ".ssa" => await ParseAssItems(filePath),
             _ => []
-        };
+        } is { Count: > 0 } rawItems
+            ? MergeDuplicateItems(CleanItemText(rawItems))
+            : [];
     }
 
     /// <summary>
@@ -151,6 +153,45 @@ public partial class SubtitleExtractor
         }
 
         return items;
+    }
+
+    private static List<SubtitleItem> CleanItemText(List<SubtitleItem> items)
+    {
+        for (int i = 0; i < items.Count; i++)
+        {
+            var item = items[i];
+            var cleaned = SubtitleTextCleaner.CleanText(item.Text);
+            if (cleaned == item.Text)
+                continue;
+
+            items[i] = new SubtitleItem(item.StartMs, item.EndMs, cleaned);
+        }
+
+        return items;
+    }
+
+    private static List<SubtitleItem> MergeDuplicateItems(IEnumerable<SubtitleItem> items)
+    {
+        var merged = new List<SubtitleItem>();
+        foreach (var item in items.OrderBy(i => i.StartMs).ThenBy(i => i.EndMs))
+        {
+            if (merged.Count == 0)
+            {
+                merged.Add(item);
+                continue;
+            }
+
+            var last = merged[^1];
+            if (item.Text == last.Text && item.StartMs <= last.EndMs)
+            {
+                merged[^1] = new SubtitleItem(last.StartMs, Math.Max(last.EndMs, item.EndMs), last.Text);
+                continue;
+            }
+
+            merged.Add(item);
+        }
+
+        return merged;
     }
 
     private static bool TryParseSrtTimeRange(string line, out int startMs, out int endMs)
