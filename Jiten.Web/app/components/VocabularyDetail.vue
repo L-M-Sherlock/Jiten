@@ -37,7 +37,7 @@
   const mediaFreqUrl = computed(() => `vocabulary/${props.wordId}/${currentReadingIndex.value}/media-frequency`);
   const knownStateUrl = computed(() => `vocabulary/${props.wordId}/${currentReadingIndex.value}/known-state`);
 
-  const { data: response } = useApiFetch<Word>(infoUrl, { watch: false });
+  const { data: response, refresh: refreshInfo } = useApiFetch<Word>(infoUrl, { watch: false });
   const { data: mediaFrequency, status: mediaFreqStatus, refresh: refreshMediaFrequency } = useApiFetch<Record<string, number>>(mediaFreqUrl, { lazy: true, watch: false });
   const { data: knownStates, refresh: refreshKnownStates } = useApiFetch<KnownState[]>(knownStateUrl, { lazy: true, watch: false });
 
@@ -78,7 +78,7 @@
 
   const switchReadingOrWord = async () => {
     isTransitioning.value = true;
-    response.value = await $api<Word>(infoUrl.value);
+    await refreshInfo();
     isTransitioning.value = false;
 
     selectedMediaType.value = null;
