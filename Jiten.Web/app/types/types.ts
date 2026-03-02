@@ -581,7 +581,7 @@ export interface MediaRequestUploadDto {
 }
 
 export interface MediaRequestUploadAdminDto extends MediaRequestUploadDto {
-  uploaderEmail?: string;
+  uploaderName?: string;
   adminReviewed: boolean;
   adminNote?: string;
   fileDeleted: boolean;
