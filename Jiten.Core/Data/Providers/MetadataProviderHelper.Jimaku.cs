@@ -32,7 +32,7 @@ public partial class MetadataProviderHelper
     {
         var queryParams = new List<string>();
         if (anilistId.HasValue) queryParams.Add($"anilist_id={anilistId.Value}");
-        if (tmdbId != null) queryParams.Add($"tmdb_id={Uri.EscapeDataString(tmdbId)}");
+        if (tmdbId != null) queryParams.Add($"tmdb_id={tmdbId}");
         if (query != null) queryParams.Add($"query={Uri.EscapeDataString(query)}");
 
         var url = $"https://jimaku.cc/api/entries/search?{string.Join("&", queryParams)}";
