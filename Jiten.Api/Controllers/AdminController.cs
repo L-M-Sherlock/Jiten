@@ -794,6 +794,33 @@ public partial class AdminController(
         return Ok(new { Message = $"Queued difficulty computation for deck {deckId}" });
     }
 
+    [HttpPost("recompute-parent-speech-speed")]
+    public async Task<IActionResult> RecomputeParentSpeechSpeed()
+    {
+        var parentDecks = await dbContext.Decks
+            .Include(d => d.Children)
+            .Where(d => d.ParentDeckId == null && d.Children.Any())
+            .ToListAsync();
+
+        int updated = 0;
+        foreach (var parent in parentDecks)
+        {
+            var childrenWithSpeech = parent.Children.Where(c => c.SpeechDuration > 0).ToList();
+            if (childrenWithSpeech.Count == 0) continue;
+
+            var avgSpeed = childrenWithSpeech.Average(c => c.SpeechSpeed);
+            var totalDuration = childrenWithSpeech.Sum(c => c.SpeechDuration);
+            parent.SpeechDuration = totalDuration;
+            parent.SpeechMoraCount = (long)(avgSpeed * (totalDuration / 60000.0));
+            updated++;
+        }
+
+        await dbContext.SaveChangesAsync();
+
+        logger.LogInformation("Admin recomputed speech speed for {Count} parent decks", updated);
+        return Ok(new { Message = $"Recomputed speech speed for {updated} parent decks", Count = updated });
+    }
+
     /// <summary>
     /// Reaggregate parent difficulties from their children
     /// </summary>

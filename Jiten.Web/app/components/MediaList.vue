@@ -49,7 +49,6 @@
   const sortByOptions = ref([
     { label: 'Title', value: 'title' },
     { label: 'Difficulty', value: 'difficulty' },
-    { label: 'Character Count', value: 'charCount' },
     { label: 'Subdeck Count', value: 'subdeckCount' },
     { label: 'External Rating', value: 'extRating' },
     { label: 'Unique Kanji', value: 'uKanji' },
@@ -60,16 +59,29 @@
     { label: 'Added Date', value: 'addedDate' },
   ]);
 
-  // Array used to reorder the sortByOptions when some options are added or removed to keep the order consistent'
+  const novelSortOptions = ref<{ label: string; value: string }[]>([]);
+  const speechSortOptions = ref<{ label: string; value: string }[]>([]);
+
+  const sortByGrouped = computed(() => {
+    const groups: { label: string; items: { label: string; value: string }[] }[] = [
+      { label: 'General', items: sortByOptions.value },
+    ];
+    if (novelSortOptions.value.length > 0) {
+      groups.push({ label: 'Novel', items: novelSortOptions.value });
+    }
+    if (speechSortOptions.value.length > 0) {
+      groups.push({ label: 'Audio-Video', items: speechSortOptions.value });
+    }
+    return groups;
+  });
+
+  // Array used to reorder the sortByOptions when some options are added or removed to keep the order consistent
   const sortByOrdering = [
     'title',
     'difficulty',
-    'charCount',
     'coverage',
     'uCoverage',
     'extRating',
-    'dialoguePercentage',
-    'speechSpeed',
     'sentenceLength',
     'uKanji',
     'uWordCount',
@@ -268,31 +280,28 @@
   );
 
   const updateOptions = () => {
-    const showDialogueOptionMediaTypes = [MediaType.Novel, MediaType.VisualNovel, MediaType.WebNovel, MediaType.NonFiction];
     const showspeechSpeedOptionMediaTypes = [MediaType.Anime, MediaType.Drama, MediaType.Movie, MediaType.Audio];
 
-    if (mediaType.value == null || showDialogueOptionMediaTypes.includes(Number(mediaType.value))) {
-      if (!sortByOptions.value.some((o) => o.value === 'dialoguePercentage')) {
-        sortByOptions.value.push({ label: 'Dialogue Percentage', value: 'dialoguePercentage' });
-      }
+    if (mediaType.value == null || !showspeechSpeedOptionMediaTypes.includes(Number(mediaType.value))) {
+      novelSortOptions.value = [
+        { label: 'Character Count', value: 'charCount' },
+        { label: 'Dialogue Percentage', value: 'dialoguePercentage' },
+      ];
     } else {
-      if (sortByOptions.value.some((o) => o.value === 'dialoguePercentage')) {
-        sortByOptions.value = sortByOptions.value.filter((o) => o.value !== 'dialoguePercentage');
-      }
-      if (sortBy.value === 'dialoguePercentage') {
+      novelSortOptions.value = [];
+      if (sortBy.value === 'charCount' || sortBy.value === 'dialoguePercentage') {
         sortBy.value = 'title';
       }
     }
 
     if (mediaType.value == null || showspeechSpeedOptionMediaTypes.includes(Number(mediaType.value))) {
-      if (!sortByOptions.value.some((o) => o.value === 'speechSpeed')) {
-        sortByOptions.value.push({ label: 'Speech speed', value: 'speechSpeed' });
-      }
+      speechSortOptions.value = [
+        { label: 'Speech Speed', value: 'speechSpeed' },
+        { label: 'Speech Duration', value: 'speechDuration' },
+      ];
     } else {
-      if (sortByOptions.value.some((o) => o.value === 'speechSpeed')) {
-        sortByOptions.value = sortByOptions.value.filter((o) => o.value !== 'speechSpeed');
-      }
-      if (sortBy.value === 'speechSpeed') {
+      speechSortOptions.value = [];
+      if (sortBy.value === 'speechSpeed' || sortBy.value === 'speechDuration') {
         sortBy.value = 'title';
       }
     }
@@ -562,14 +571,20 @@
         <FloatLabel variant="on" class="w-full">
           <Select
             v-model="sortBy"
-            :options="sortByOptions"
+            :options="sortByGrouped"
             option-label="label"
             option-value="value"
+            option-group-label="label"
+            option-group-children="items"
             placeholder="Sort by"
             input-id="sortBy"
             class="w-full md:w-56"
-            scroll-height="30vh"
-          />
+            scroll-height="50vh"
+          >
+            <template #optiongroup="{ option }">
+              <div class="text-xs font-semibold text-surface-500 dark:text-surface-400 py-0.5 px-1">{{ option.label }}</div>
+            </template>
+          </Select>
           <label for="sortBy">Sort by</label>
         </FloatLabel>
         <Button class="w-12" @click="sortOrder = sortOrder === SortOrder.Ascending ? SortOrder.Descending : SortOrder.Ascending">

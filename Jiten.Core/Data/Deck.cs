@@ -256,8 +256,18 @@ public class Deck
         UniqueWordCount = DeckWords.Select(dw => new { dw.WordId, dw.ReadingIndex }).Distinct().Count();
         UniqueWordUsedOnceCount = DeckWords.Where(dw => dw.Occurrences == 1).Select(dw => new { dw.WordId, dw.ReadingIndex }).Distinct().Count();
         SentenceCount = Children.Sum(c => c.SentenceCount);
-        SpeechDuration = Children.Sum(c => c.SpeechDuration);
-        SpeechMoraCount = Children.Sum(c => c.SpeechMoraCount);
+        var childrenWithSpeech = Children.Where(c => c.SpeechDuration > 0).ToList();
+        if (childrenWithSpeech.Count > 0)
+        {
+            var avgSpeed = childrenWithSpeech.Average(c => c.SpeechSpeed);
+            SpeechDuration = childrenWithSpeech.Sum(c => c.SpeechDuration);
+            SpeechMoraCount = (long)(avgSpeed * (SpeechDuration / 60000.0));
+        }
+        else
+        {
+            SpeechDuration = 0;
+            SpeechMoraCount = 0;
+        }
         Difficulty = Children.Average(c => c.Difficulty);
         DialoguePercentage = Children.Sum(c => c.DialoguePercentage) / Children.Count;
 

@@ -839,8 +839,10 @@ public class MediaDeckController(
                 : query.Where(d => d.Difficulty > -1)
                        .OrderByDescending(d => d.DifficultyOverride > -1 ? d.DifficultyOverride : d.Difficulty),
             "charCount" => sortOrder == SortOrder.Ascending
-                ? query.OrderBy(d => d.CharacterCount)
-                : query.OrderByDescending(d => d.CharacterCount),
+                ? query.Where(d => d.MediaType != MediaType.Anime && d.MediaType != MediaType.Drama && d.MediaType != MediaType.Movie && d.MediaType != MediaType.Audio)
+                       .OrderBy(d => d.CharacterCount)
+                : query.Where(d => d.MediaType != MediaType.Anime && d.MediaType != MediaType.Drama && d.MediaType != MediaType.Movie && d.MediaType != MediaType.Audio)
+                       .OrderByDescending(d => d.CharacterCount),
             "sentenceLength" => sortOrder == SortOrder.Ascending
                 ? query.OrderBy(d => d.CharacterCount / (d.SentenceCount + 1)).Where(d => d.SentenceCount != 0)
                 : query.OrderByDescending(d => d.CharacterCount / (d.SentenceCount + 1)).Where(d => d.SentenceCount != 0),
@@ -849,11 +851,16 @@ public class MediaDeckController(
                        .Where(d => !d.HideDialoguePercentage && d.DialoguePercentage != 0 && d.DialoguePercentage != 100)
                 : query.OrderByDescending(d => d.DialoguePercentage)
                        .Where(d => !d.HideDialoguePercentage && d.DialoguePercentage != 0 && d.DialoguePercentage != 100),
-            "subtitleRate" => sortOrder == SortOrder.Ascending
+            "speechSpeed" => sortOrder == SortOrder.Ascending
                 ? query.Where(d => d.SpeechDuration > 0)
                        .OrderBy(d => d.SpeechMoraCount / (d.SpeechDuration / 60000.0))
                 : query.Where(d => d.SpeechDuration > 0)
                        .OrderByDescending(d => d.SpeechMoraCount / (d.SpeechDuration / 60000.0)),
+            "speechDuration" => sortOrder == SortOrder.Ascending
+                ? query.Where(d => d.SpeechDuration > 0)
+                       .OrderBy(d => d.SpeechDuration)
+                : query.Where(d => d.SpeechDuration > 0)
+                       .OrderByDescending(d => d.SpeechDuration),
             "wordCount" => sortOrder == SortOrder.Ascending
                 ? query.OrderBy(d => d.WordCount)
                 : query.OrderByDescending(d => d.WordCount),
@@ -900,8 +907,10 @@ public class MediaDeckController(
                 : query.Where(p => p.Deck.Difficulty > -1)
                        .OrderByDescending(p => p.Deck.DifficultyOverride > -1 ? p.Deck.DifficultyOverride : p.Deck.Difficulty),
             "charCount" => sortOrder == SortOrder.Ascending
-                ? query.OrderBy(p => p.Deck.CharacterCount)
-                : query.OrderByDescending(p => p.Deck.CharacterCount),
+                ? query.Where(p => p.Deck.MediaType != MediaType.Anime && p.Deck.MediaType != MediaType.Drama && p.Deck.MediaType != MediaType.Movie && p.Deck.MediaType != MediaType.Audio)
+                       .OrderBy(p => p.Deck.CharacterCount)
+                : query.Where(p => p.Deck.MediaType != MediaType.Anime && p.Deck.MediaType != MediaType.Drama && p.Deck.MediaType != MediaType.Movie && p.Deck.MediaType != MediaType.Audio)
+                       .OrderByDescending(p => p.Deck.CharacterCount),
             "sentenceLength" => sortOrder == SortOrder.Ascending
                 ? query.OrderBy(p => p.Deck.CharacterCount / (p.Deck.SentenceCount + 1)).Where(p => p.Deck.SentenceCount != 0)
                 : query.OrderByDescending(p => p.Deck.CharacterCount / (p.Deck.SentenceCount + 1)).Where(p => p.Deck.SentenceCount != 0),
@@ -910,11 +919,16 @@ public class MediaDeckController(
                        .Where(p => p.Deck.DialoguePercentage != 0 && p.Deck.DialoguePercentage != 100)
                 : query.OrderByDescending(p => p.Deck.DialoguePercentage)
                        .Where(p => p.Deck.DialoguePercentage != 0 && p.Deck.DialoguePercentage != 100),
-            "subtitleRate" => sortOrder == SortOrder.Ascending
+            "speechSpeed" => sortOrder == SortOrder.Ascending
                 ? query.Where(p => p.Deck.SpeechDuration > 0)
                        .OrderBy(p => p.Deck.SpeechMoraCount / (p.Deck.SpeechDuration / 60000.0))
                 : query.Where(p => p.Deck.SpeechDuration > 0)
                        .OrderByDescending(p => p.Deck.SpeechMoraCount / (p.Deck.SpeechDuration / 60000.0)),
+            "speechDuration" => sortOrder == SortOrder.Ascending
+                ? query.Where(p => p.Deck.SpeechDuration > 0)
+                       .OrderBy(p => p.Deck.SpeechDuration)
+                : query.Where(p => p.Deck.SpeechDuration > 0)
+                       .OrderByDescending(p => p.Deck.SpeechDuration),
             "wordCount" => sortOrder == SortOrder.Ascending
                 ? query.OrderBy(p => p.Deck.WordCount)
                 : query.OrderByDescending(p => p.Deck.WordCount),
