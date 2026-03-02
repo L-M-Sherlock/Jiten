@@ -92,27 +92,34 @@ public static class SubtitleMoraRateCalculator
         return true;
     }
 
+    private const int BatchSize = 200;
+
     private static async Task<List<long>> CountMoraPerTextAsync(IReadOnlyList<string> texts)
     {
         if (texts.Count == 0)
             return [];
 
         var parser = new MorphologicalAnalyser();
-        var batches = await parser.ParseBatch(texts.ToList(), morphemesOnly: true);
-        var counts = new List<long>(batches.Count);
+        var counts = new List<long>(texts.Count);
 
-        foreach (var sentences in batches)
+        for (int offset = 0; offset < texts.Count; offset += BatchSize)
         {
-            long count = 0;
-            foreach (var sentence in sentences)
-            {
-                foreach (var (word, _, _) in sentence.Words)
-                {
-                    count += CountMora(word);
-                }
-            }
+            var chunk = texts.Skip(offset).Take(BatchSize).ToList();
+            var batches = await parser.ParseBatch(chunk, morphemesOnly: true);
 
-            counts.Add(count);
+            foreach (var sentences in batches)
+            {
+                long count = 0;
+                foreach (var sentence in sentences)
+                {
+                    foreach (var (word, _, _) in sentence.Words)
+                    {
+                        count += CountMora(word);
+                    }
+                }
+
+                counts.Add(count);
+            }
         }
 
         return counts;

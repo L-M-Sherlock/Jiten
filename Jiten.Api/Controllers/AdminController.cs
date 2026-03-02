@@ -339,8 +339,11 @@ public partial class AdminController(
         {
             var (text, stats) = await GetTextFromFile(model.File);
             deck.RawText!.RawText = text;
-            deck.SpeechDuration = stats.DurationMs;
-            deck.SpeechMoraCount = stats.MoraCount;
+            if (stats.DurationMs > 0)
+            {
+                deck.SpeechDuration = stats.DurationMs;
+                deck.SpeechMoraCount = stats.MoraCount;
+            }
         }
 
 
@@ -475,8 +478,11 @@ public partial class AdminController(
                     {
                         var (text, stats) = await GetTextFromFile(subdeck.File);
                         existingSubdeck.RawText!.RawText = text;
-                        existingSubdeck.SpeechDuration = stats.DurationMs;
-                        existingSubdeck.SpeechMoraCount = stats.MoraCount;
+                        if (stats.DurationMs > 0)
+                        {
+                            existingSubdeck.SpeechDuration = stats.DurationMs;
+                            existingSubdeck.SpeechMoraCount = stats.MoraCount;
+                        }
                     }
                 }
                 else

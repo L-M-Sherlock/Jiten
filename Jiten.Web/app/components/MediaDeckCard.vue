@@ -286,10 +286,10 @@
                     </div>
 
                     <div v-if="speechSpeed > 0" class="flex justify-between flex-wrap stat-row">
-                      <Tooltip content="Mora per minute based on subtitle timings (overlaps merged), with IQR-trimmed outliers.">
-                        <span class="text-gray-600 dark:text-gray-300 truncate pr-2 font-medium">Mora/min</span>
+                      <Tooltip content="Average speed of speech in mora per minute.">
+                        <span class="text-gray-600 dark:text-gray-300 truncate pr-2 font-medium">Speech speed</span>
                       </Tooltip>
-                      <span class="tabular-nums font-semibold">{{ speechSpeed.toFixed(1) }}</span>
+                      <span class="tabular-nums font-semibold">{{ speechSpeed.toFixed(0) }}</span>
                     </div>
 
                     <div v-if="deck.childrenDeckCount != 0" class="flex justify-between flex-wrap stat-row">

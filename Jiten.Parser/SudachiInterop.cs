@@ -330,7 +330,10 @@ static class SudachiInterop
                         _freeString(errPtr);
 
                         if (!string.IsNullOrEmpty(err))
+                        {
+                            RecycleContext();
                             throw new InvalidOperationException($"Sudachi streaming error: {err}");
+                        }
                     }
                 }
 

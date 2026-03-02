@@ -69,7 +69,7 @@
     'uCoverage',
     'extRating',
     'dialoguePercentage',
-    'subtitleRate',
+    'speechSpeed',
     'sentenceLength',
     'uKanji',
     'uWordCount',
@@ -113,8 +113,8 @@
   const subdeckCountMax = ref<number | null>(toNumOrNull(route.query.subdeckCountMax));
   const extRatingMin = ref<number | null>(toNumOrNull(route.query.extRatingMin));
   const extRatingMax = ref<number | null>(toNumOrNull(route.query.extRatingMax));
-  const subtitleRateMin = ref<number | null>(toNumOrNull(route.query.subtitleRateMin));
-  const subtitleRateMax = ref<number | null>(toNumOrNull(route.query.subtitleRateMax));
+  const speechSpeedMin = ref<number | null>(toNumOrNull(route.query.speechSpeedMin));
+  const speechSpeedMax = ref<number | null>(toNumOrNull(route.query.speechSpeedMax));
   const coverageMin = ref<number | null>(toNumOrNull(route.query.coverageMin));
   const coverageMax = ref<number | null>(toNumOrNull(route.query.coverageMax));
   const uniqueCoverageMin = ref<number | null>(toNumOrNull(route.query.uniqueCoverageMin));
@@ -150,7 +150,7 @@
   watch([uniqueKanjiMin, uniqueKanjiMax], () => normalizePair(uniqueKanjiMin, uniqueKanjiMax, 0, 5000));
   watch([subdeckCountMin, subdeckCountMax], () => normalizePair(subdeckCountMin, subdeckCountMax, 0, 2000));
   watch([extRatingMin, extRatingMax], () => normalizePair(extRatingMin, extRatingMax, 0, 2000));
-  watch([subtitleRateMin, subtitleRateMax], () => normalizePair(subtitleRateMin, subtitleRateMax, 0, 800));
+  watch([speechSpeedMin, speechSpeedMax], () => normalizePair(speechSpeedMin, speechSpeedMax, 0, 800));
   watch([coverageMin, coverageMax], () => normalizePair(coverageMin, coverageMax, 0, 100));
   watch([uniqueCoverageMin, uniqueCoverageMax], () => normalizePair(uniqueCoverageMin, uniqueCoverageMax, 0, 100));
 
@@ -167,8 +167,8 @@
     subdeckCountMax: subdeckCountMax.value,
     extRatingMin: extRatingMin.value,
     extRatingMax: extRatingMax.value,
-    subtitleRateMin: subtitleRateMin.value,
-    subtitleRateMax: subtitleRateMax.value,
+    speechSpeedMin: speechSpeedMin.value,
+    speechSpeedMax: speechSpeedMax.value,
     coverageMin: coverageMin.value,
     coverageMax: coverageMax.value,
     uniqueCoverageMin: uniqueCoverageMin.value,
@@ -195,8 +195,8 @@
         subdeckCountMax: subdeckCountMax.value,
         extRatingMin: extRatingMin.value,
         extRatingMax: extRatingMax.value,
-        subtitleRateMin: subtitleRateMin.value,
-        subtitleRateMax: subtitleRateMax.value,
+        speechSpeedMin: speechSpeedMin.value,
+        speechSpeedMax: speechSpeedMax.value,
         coverageMin: coverageMin.value,
         coverageMax: coverageMax.value,
         uniqueCoverageMin: uniqueCoverageMin.value,
@@ -226,8 +226,8 @@
           subdeckCountMax: toUndef(subdeckCountMax.value) as any,
           extRatingMin: toUndef(extRatingMin.value) as any,
           extRatingMax: toUndef(extRatingMax.value) as any,
-          subtitleRateMin: toUndef(subtitleRateMin.value) as any,
-          subtitleRateMax: toUndef(subtitleRateMax.value) as any,
+          speechSpeedMin: toUndef(speechSpeedMin.value) as any,
+          speechSpeedMax: toUndef(speechSpeedMax.value) as any,
           coverageMin: toUndef(coverageMin.value) as any,
           coverageMax: toUndef(coverageMax.value) as any,
           uniqueCoverageMin: toUndef(uniqueCoverageMin.value) as any,
@@ -246,7 +246,7 @@
   );
 
   watch(
-    [charCountMin, charCountMax, difficultyMin, difficultyMax, releaseYearMin, releaseYearMax, uniqueKanjiMin, uniqueKanjiMax, subdeckCountMin, subdeckCountMax, extRatingMin, extRatingMax, subtitleRateMin, subtitleRateMax, coverageMin, coverageMax, uniqueCoverageMin, uniqueCoverageMax, excludeSequels],
+    [charCountMin, charCountMax, difficultyMin, difficultyMax, releaseYearMin, releaseYearMax, uniqueKanjiMin, uniqueKanjiMax, subdeckCountMin, subdeckCountMax, extRatingMin, extRatingMax, speechSpeedMin, speechSpeedMax, coverageMin, coverageMax, uniqueCoverageMin, uniqueCoverageMax, excludeSequels],
     () => {
       updateFiltersDebounced();
     }
@@ -269,7 +269,7 @@
 
   const updateOptions = () => {
     const showDialogueOptionMediaTypes = [MediaType.Novel, MediaType.VisualNovel, MediaType.WebNovel, MediaType.NonFiction];
-    const showSubtitleRateOptionMediaTypes = [MediaType.Anime, MediaType.Drama, MediaType.Movie, MediaType.Audio];
+    const showspeechSpeedOptionMediaTypes = [MediaType.Anime, MediaType.Drama, MediaType.Movie, MediaType.Audio];
 
     if (mediaType.value == null || showDialogueOptionMediaTypes.includes(Number(mediaType.value))) {
       if (!sortByOptions.value.some((o) => o.value === 'dialoguePercentage')) {
@@ -284,15 +284,15 @@
       }
     }
 
-    if (mediaType.value == null || showSubtitleRateOptionMediaTypes.includes(Number(mediaType.value))) {
-      if (!sortByOptions.value.some((o) => o.value === 'subtitleRate')) {
-        sortByOptions.value.push({ label: 'Subtitle Mora/Min', value: 'subtitleRate' });
+    if (mediaType.value == null || showspeechSpeedOptionMediaTypes.includes(Number(mediaType.value))) {
+      if (!sortByOptions.value.some((o) => o.value === 'speechSpeed')) {
+        sortByOptions.value.push({ label: 'Speech speed', value: 'speechSpeed' });
       }
     } else {
-      if (sortByOptions.value.some((o) => o.value === 'subtitleRate')) {
-        sortByOptions.value = sortByOptions.value.filter((o) => o.value !== 'subtitleRate');
+      if (sortByOptions.value.some((o) => o.value === 'speechSpeed')) {
+        sortByOptions.value = sortByOptions.value.filter((o) => o.value !== 'speechSpeed');
       }
-      if (sortBy.value === 'subtitleRate') {
+      if (sortBy.value === 'speechSpeed') {
         sortBy.value = 'title';
       }
     }
@@ -340,8 +340,8 @@
     subdeckCountMax.value = null;
     extRatingMin.value = null;
     extRatingMax.value = null;
-    subtitleRateMin.value = null;
-    subtitleRateMax.value = null;
+    speechSpeedMin.value = null;
+    speechSpeedMax.value = null;
     coverageMin.value = null;
     coverageMax.value = null;
     uniqueCoverageMin.value = null;
@@ -374,8 +374,8 @@
         subdeckCountMax: undefined,
         extRatingMin: undefined,
         extRatingMax: undefined,
-        subtitleRateMin: undefined,
-        subtitleRateMax: undefined,
+        speechSpeedMin: undefined,
+        speechSpeedMax: undefined,
         coverageMin: undefined,
         coverageMax: undefined,
         uniqueCoverageMin: undefined,
@@ -488,8 +488,8 @@
       subdeckCountMax: computed(() => debouncedFilters.value.subdeckCountMax),
       extRatingMin: computed(() => debouncedFilters.value.extRatingMin),
       extRatingMax: computed(() => debouncedFilters.value.extRatingMax),
-      subtitleRateMin: computed(() => debouncedFilters.value.subtitleRateMin),
-      subtitleRateMax: computed(() => debouncedFilters.value.subtitleRateMax),
+      speechSpeedMin: computed(() => debouncedFilters.value.speechSpeedMin),
+      speechSpeedMax: computed(() => debouncedFilters.value.speechSpeedMax),
       coverageMin: computed(() => debouncedFilters.value.coverageMin),
       coverageMax: computed(() => debouncedFilters.value.coverageMax),
       uniqueCoverageMin: computed(() => debouncedFilters.value.uniqueCoverageMin),
@@ -603,8 +603,8 @@
         v-model:subdeck-count-max="subdeckCountMax"
         v-model:ext-rating-min="extRatingMin"
         v-model:ext-rating-max="extRatingMax"
-        v-model:subtitle-rate-min="subtitleRateMin"
-        v-model:subtitle-rate-max="subtitleRateMax"
+        v-model:subtitle-rate-min="speechSpeedMin"
+        v-model:subtitle-rate-max="speechSpeedMax"
         v-model:coverage-min="coverageMin"
         v-model:coverage-max="coverageMax"
         v-model:unique-coverage-min="uniqueCoverageMin"

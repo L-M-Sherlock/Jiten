@@ -74,9 +74,7 @@ public class DeckDto
         SentenceCount = deck.SentenceCount;
         SpeechDuration = deck.SpeechDuration;
         SpeechMoraCount = deck.SpeechMoraCount;
-        SpeechSpeed = deck.SpeechDuration > 0
-            ? (float)(deck.SpeechMoraCount / (deck.SpeechDuration / 60000.0))
-            : 0f;
+        SpeechSpeed = (float)deck.SpeechSpeed;
         AverageSentenceLength = deck.AverageSentenceLength;
         ParentDeckId = deck.ParentDeckId;
         Links = deck.Links;
@@ -119,9 +117,7 @@ public class DeckDto
         SentenceCount = deck.SentenceCount;
         SpeechDuration = deck.SpeechDuration;
         SpeechMoraCount = deck.SpeechMoraCount;
-        SpeechSpeed = deck.SpeechDuration > 0
-            ? (float)(deck.SpeechMoraCount / (deck.SpeechDuration / 60000.0))
-            : 0f;
+        SpeechSpeed = (float)deck.SpeechSpeed;
         AverageSentenceLength = deck.AverageSentenceLength;
         ParentDeckId = deck.ParentDeckId;
         Links = deck.Links;
