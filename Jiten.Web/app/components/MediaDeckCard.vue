@@ -32,6 +32,8 @@
   const displayAdminFunctions = computed(() => store.displayAdminFunctions);
   const readingSpeed = computed(() => store.readingSpeed);
   const readingDuration = computed(() => Math.round(props.deck.characterCount / readingSpeed.value));
+  const subtitleMinutes = computed(() => (props.deck.subtitleDurationMs > 0 ? props.deck.subtitleDurationMs / 60000 : 0));
+  const subtitleMoraPerMinute = computed(() => props.deck.subtitleMoraPerMinute ?? 0);
 
   const toggleMenu = (event: Event) => {
     menu.value.toggle(event);
@@ -281,6 +283,13 @@
                     >
                       <span class="text-gray-600 dark:text-gray-300 truncate pr-2 font-medium">Dialogue</span>
                       <span class="tabular-nums font-semibold">{{ deck.dialoguePercentage.toFixed(1) }}%</span>
+                    </div>
+
+                    <div v-if="subtitleMoraPerMinute > 0" class="flex justify-between flex-wrap stat-row">
+                      <Tooltip content="Mora per minute based on subtitle timings (overlaps merged), with IQR-trimmed outliers.">
+                        <span class="text-gray-600 dark:text-gray-300 truncate pr-2 font-medium">Mora/min</span>
+                      </Tooltip>
+                      <span class="tabular-nums font-semibold">{{ subtitleMoraPerMinute.toFixed(1) }}</span>
                     </div>
 
                     <div v-if="deck.childrenDeckCount != 0" class="flex justify-between flex-wrap stat-row">

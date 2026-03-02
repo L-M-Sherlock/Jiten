@@ -18,4 +18,6 @@ public class Metadata
     public bool IsAdultOnly { get; set; }
     public bool IsNotOriginallyJapanese { get; set; }
     public List<MetadataRelation> Relations { get; set; } = new();
+    public long? SubtitleDurationMs { get; set; }
+    public long? SubtitleMoraCount { get; set; }
 }

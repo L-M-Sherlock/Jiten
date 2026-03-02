@@ -169,7 +169,10 @@ public class DeckCommands(CliContext context)
             }
 
             List<string> lines = [];
-            if (Path.GetExtension(filePath)?.ToLower() == ".epub")
+            Jiten.Parser.SubtitleMoraStats? subtitleStats = null;
+            var extension = Path.GetExtension(filePath)?.ToLowerInvariant();
+
+            if (extension == ".epub")
             {
                 var extractor = new EbookExtractor();
                 var text = await ExtractEpub(filePath, extractor, options);
@@ -181,6 +184,19 @@ public class DeckCommands(CliContext context)
                 }
 
                 lines = text.Split(Environment.NewLine).ToList();
+            }
+            else if (extension != null && SubtitleExtractor.SupportedExtensions.Contains(extension))
+            {
+                var extractor = new SubtitleExtractor();
+                var text = await extractor.Extract(filePath);
+                if (!string.IsNullOrEmpty(text))
+                    lines = text.Split(Environment.NewLine).ToList();
+
+                var items = await extractor.ExtractItems(filePath);
+                if (items.Count > 0)
+                {
+                    subtitleStats = await Jiten.Parser.SubtitleMoraRateCalculator.ComputeAsync(items);
+                }
             }
             else
             {
@@ -214,6 +230,11 @@ public class DeckCommands(CliContext context)
             deck.DeckOrder = deckOrder;
             deck.OriginalTitle = metadata.OriginalTitle;
             deck.MediaType = deckType;
+            if (subtitleStats.HasValue)
+            {
+                deck.SubtitleDurationMs = subtitleStats.Value.DurationMs;
+                deck.SubtitleMoraCount = subtitleStats.Value.MoraCount;
+            }
 
             if (deckType is MediaType.Manga or MediaType.Anime or MediaType.Movie or MediaType.Drama or MediaType.Audio)
                 deck.SentenceCount = 0;

@@ -20,6 +20,9 @@ export interface Deck {
   difficultyRaw: number;
   difficultyOverride: number;
   averageSentenceLength: number;
+  subtitleDurationMs: number;
+  subtitleMoraCount: number;
+  subtitleMoraPerMinute: number;
   parentDeckId: number;
   deckWords: DeckWord[];
   links: Link[];

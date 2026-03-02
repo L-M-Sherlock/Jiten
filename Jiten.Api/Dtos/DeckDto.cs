@@ -23,6 +23,9 @@ public class DeckDto
     public float DifficultyRaw { get; set; }
     public float DifficultyOverride { get; set; }
     public int SentenceCount { get; set; }
+    public long SubtitleDurationMs { get; set; }
+    public long SubtitleMoraCount { get; set; }
+    public float SubtitleMoraPerMinute { get; set; }
     public float AverageSentenceLength { get; set; }
     public int? ParentDeckId { get; set; }
     public List<Link> Links { get; set; } = new();
@@ -69,6 +72,11 @@ public class DeckDto
         DifficultyRaw = deck.GetDifficulty();
         DifficultyOverride = deck.DifficultyOverride;
         SentenceCount = deck.SentenceCount;
+        SubtitleDurationMs = deck.SubtitleDurationMs;
+        SubtitleMoraCount = deck.SubtitleMoraCount;
+        SubtitleMoraPerMinute = deck.SubtitleDurationMs > 0
+            ? (float)(deck.SubtitleMoraCount / (deck.SubtitleDurationMs / 60000.0))
+            : 0f;
         AverageSentenceLength = deck.AverageSentenceLength;
         ParentDeckId = deck.ParentDeckId;
         Links = deck.Links;
@@ -109,6 +117,11 @@ public class DeckDto
         DifficultyRaw = deck.GetDifficulty();
         DifficultyOverride = deck.DifficultyOverride;
         SentenceCount = deck.SentenceCount;
+        SubtitleDurationMs = deck.SubtitleDurationMs;
+        SubtitleMoraCount = deck.SubtitleMoraCount;
+        SubtitleMoraPerMinute = deck.SubtitleDurationMs > 0
+            ? (float)(deck.SubtitleMoraCount / (deck.SubtitleDurationMs / 60000.0))
+            : 0f;
         AverageSentenceLength = deck.AverageSentenceLength;
         ParentDeckId = deck.ParentDeckId;
         Links = deck.Links;
