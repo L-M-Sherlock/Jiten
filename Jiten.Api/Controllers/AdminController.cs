@@ -12,6 +12,7 @@ using Jiten.Core.Data;
 using Jiten.Core.Data.FSRS;
 using Jiten.Core.Data.JMDict;
 using Jiten.Core.Data.Providers;
+using Jiten.Parser;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -335,7 +336,12 @@ public partial class AdminController(
 
         // Update text if provided
         if (model.File is { Length: > 0 })
-            deck.RawText!.RawText = await GetTextFromFile(model.File);
+        {
+            var (text, stats) = await GetTextFromFile(model.File);
+            deck.RawText!.RawText = text;
+            deck.SubtitleDurationMs = stats.DurationMs;
+            deck.SubtitleMoraCount = stats.MoraCount;
+        }
 
 
         // Update links
@@ -466,7 +472,12 @@ public partial class AdminController(
                     existingSubdeck.DifficultyOverride = subdeck.DifficultyOverride;
 
                     if (subdeck.File is { Length: > 0 })
-                        existingSubdeck.RawText!.RawText = await GetTextFromFile(subdeck.File);
+                    {
+                        var (text, stats) = await GetTextFromFile(subdeck.File);
+                        existingSubdeck.RawText!.RawText = text;
+                        existingSubdeck.SubtitleDurationMs = stats.DurationMs;
+                        existingSubdeck.SubtitleMoraCount = stats.MoraCount;
+                    }
                 }
                 else
                 {
@@ -477,7 +488,12 @@ public partial class AdminController(
                                   };
 
                     if (subdeck.File is { Length: > 0 })
-                        newDeck.RawText = new DeckRawText(await GetTextFromFile(subdeck.File));
+                    {
+                        var (text, stats) = await GetTextFromFile(subdeck.File);
+                        newDeck.RawText = new DeckRawText(text);
+                        newDeck.SubtitleDurationMs = stats.DurationMs;
+                        newDeck.SubtitleMoraCount = stats.MoraCount;
+                    }
 
                     deck.Children.Add(newDeck);
                     newChildDecks.Add(newDeck);
@@ -561,28 +577,53 @@ public partial class AdminController(
 
         return Ok(new { Message = $"Media deck {deck.DeckId} updated successfully" });
 
-        async Task<string> GetTextFromFile(IFormFile file)
+        async Task<(string text, SubtitleMoraStats stats)> GetTextFromFile(IFormFile file)
         {
-            var fileExtension = Path.GetExtension(file.FileName);
+            var fileExtension = Path.GetExtension(file.FileName).ToLowerInvariant();
             var filePath = Path.Join(path, $"{Guid.NewGuid()}{fileExtension}");
             await using var stream = new FileStream(filePath, FileMode.Create);
             await file.CopyToAsync(stream);
             stream.Close();
 
-            string text = fileExtension switch
-            {
-                ".epub" => await new EbookExtractor().ExtractTextFromEbook(filePath),
-                ".mokuro" => await new MokuroExtractor().Extract(filePath, false),
-                ".ass" or ".srt" or ".ssa" => await new SubtitleExtractor().Extract(filePath),
-                _ => await System.IO.File.ReadAllTextAsync(filePath)
-            };
+            var text = await ExtractTextFromFile(filePath, fileExtension);
 
             if (string.IsNullOrEmpty(text))
             {
                 throw new Exception($"No text found in the {fileExtension} file.");
             }
 
-            return text;
+            var stats = await ComputeSubtitleStatsIfNeeded(filePath, fileExtension);
+            return (text, stats);
+        }
+
+        static async Task<string> ExtractTextFromFile(string filePath, string fileExtension)
+        {
+            if (fileExtension is ".ass" or ".srt" or ".ssa")
+            {
+                var extractor = new SubtitleExtractor();
+                return await extractor.Extract(filePath);
+            }
+
+            if (fileExtension == ".epub")
+                return await new EbookExtractor().ExtractTextFromEbook(filePath);
+
+            if (fileExtension == ".mokuro")
+                return await new MokuroExtractor().Extract(filePath, false);
+
+            return await System.IO.File.ReadAllTextAsync(filePath);
+        }
+
+        static async Task<SubtitleMoraStats> ComputeSubtitleStatsIfNeeded(string filePath, string fileExtension)
+        {
+            if (fileExtension is not (".ass" or ".srt" or ".ssa"))
+                return SubtitleMoraStats.Empty;
+
+            var extractor = new SubtitleExtractor();
+            var items = await extractor.ExtractItems(filePath);
+            if (items.Count == 0)
+                return SubtitleMoraStats.Empty;
+
+            return await SubtitleMoraRateCalculator.ComputeAsync(items);
         }
     }
 
@@ -1140,6 +1181,7 @@ public partial class AdminController(
                                 .ToList();
 
             List<string> extractedFiles = [];
+            var subtitleStatsByFile = new Dictionary<string, SubtitleMoraStats>();
             foreach (var file in subtitleFiles)
             {
                 var text = await extractor.Extract(file);
@@ -1148,6 +1190,13 @@ public partial class AdminController(
                 var txtPath = Path.ChangeExtension(file, ".txt");
                 await System.IO.File.WriteAllTextAsync(txtPath, text);
                 extractedFiles.Add(txtPath);
+
+                var items = await extractor.ExtractItems(file);
+                if (items.Count > 0)
+                {
+                    var stats = await SubtitleMoraRateCalculator.ComputeAsync(items);
+                    subtitleStatsByFile[txtPath] = stats;
+                }
             }
 
             if (extractedFiles.Count > 1)
@@ -1156,12 +1205,25 @@ public partial class AdminController(
                 for (var i = 0; i < extractedFiles.Count; i++)
                 {
                     var file = extractedFiles[i];
-                    metadata.Children.Add(new Metadata { FilePath = file, OriginalTitle = $"Episode {i + 1}" });
+                    subtitleStatsByFile.TryGetValue(file, out var stats);
+                    metadata.Children.Add(new Metadata
+                    {
+                        FilePath = file,
+                        OriginalTitle = $"Episode {i + 1}",
+                        SubtitleDurationMs = stats.DurationMs,
+                        SubtitleMoraCount = stats.MoraCount
+                    });
                 }
             }
             else if (extractedFiles.Count == 1)
             {
-                metadata.FilePath = extractedFiles.First();
+                var file = extractedFiles.First();
+                metadata.FilePath = file;
+                if (subtitleStatsByFile.TryGetValue(file, out var stats))
+                {
+                    metadata.SubtitleDurationMs = stats.DurationMs;
+                    metadata.SubtitleMoraCount = stats.MoraCount;
+                }
             }
             else
             {
