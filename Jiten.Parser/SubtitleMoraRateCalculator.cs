@@ -1,5 +1,4 @@
 using System.Text;
-using System.Linq;
 using System.Text.RegularExpressions;
 using System.Text.Unicode;
 using Jiten.Core;
@@ -7,9 +6,9 @@ using Jiten.Core.Data;
 
 namespace Jiten.Parser;
 
-public readonly record struct SubtitleMoraStats(long MoraCount, long DurationMs)
+public readonly record struct SubtitleStats(long MoraCount, long DurationMs)
 {
-    public static readonly SubtitleMoraStats Empty = new(0, 0);
+    public static readonly SubtitleStats Empty = new(0, 0);
 
     public double MoraPerMinute => DurationMs > 0 ? MoraCount / (DurationMs / 60000.0) : 0;
 }
@@ -21,7 +20,7 @@ public static class SubtitleMoraRateCalculator
         new(@"(?<=[\u3040-\u309F\u30A0-\u30FF])[～〜]+", RegexOptions.Compiled);
     private const string SmallKanaChars = "ぁぃぅぇぉゃゅょゎゕゖァィゥェォャュョヮヵヶ";
 
-    public static async Task<SubtitleMoraStats> ComputeAsync(IEnumerable<SubtitleItem> items)
+    public static async Task<SubtitleStats> ComputeAsync(IEnumerable<SubtitleItem> items)
     {
         var entries = new List<SubtitleEntry>();
 
@@ -37,11 +36,11 @@ public static class SubtitleMoraRateCalculator
         }
 
         if (entries.Count == 0)
-            return SubtitleMoraStats.Empty;
+            return SubtitleStats.Empty;
 
         var moraCounts = await CountMoraPerTextAsync(entries.Select(e => e.Text).ToList());
         if (moraCounts.Count == 0)
-            return SubtitleMoraStats.Empty;
+            return SubtitleStats.Empty;
 
         var rateEntries = new List<SubtitleRateEntry>(entries.Count);
         for (int i = 0; i < entries.Count && i < moraCounts.Count; i++)
@@ -60,17 +59,17 @@ public static class SubtitleMoraRateCalculator
         }
 
         if (rateEntries.Count == 0)
-            return SubtitleMoraStats.Empty;
+            return SubtitleStats.Empty;
 
         rateEntries = TrimOutliers(rateEntries);
         if (rateEntries.Count == 0)
-            return SubtitleMoraStats.Empty;
+            return SubtitleStats.Empty;
 
         var totalMora = rateEntries.Sum(e => e.MoraCount);
         var durationMsTotal = MergeIntervals(rateEntries.Select(e => (e.StartMs, e.EndMs)).ToList())
             .Sum(i => (long)i.end - i.start);
 
-        return new SubtitleMoraStats(totalMora, durationMsTotal);
+        return new SubtitleStats(totalMora, durationMsTotal);
     }
 
     private static bool TryGetSpokenText(string rawText, out string spoken)

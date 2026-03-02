@@ -62,8 +62,8 @@ public class ParseJob(IDbContextFactory<JitenDbContext> contextFactory, IBackgro
             deck = await Parser.Parser.ParseTextToDeck(contextFactory, text, storeRawText, true, deckType);
         }
 
-        deck.SubtitleDurationMs = metadata.SubtitleDurationMs ?? 0;
-        deck.SubtitleMoraCount = metadata.SubtitleMoraCount ?? 0;
+        deck.SpeechDuration = metadata.SpeechDuration ?? 0;
+        deck.SpeechMoraCount = metadata.SpeechMoraCount ?? 0;
 
         // Batch process ALL descendants in one Sudachi call
         if (metadata.Children.Count > 0)
@@ -170,8 +170,8 @@ public class ParseJob(IDbContextFactory<JitenDbContext> contextFactory, IBackgro
             deck.OriginalTitle = meta.OriginalTitle;
             deck.MediaType = deckType;
             deck.DifficultyOverride = -1;
-            deck.SubtitleDurationMs = meta.SubtitleDurationMs ?? 0;
-            deck.SubtitleMoraCount = meta.SubtitleMoraCount ?? 0;
+            deck.SpeechDuration = meta.SpeechDuration ?? 0;
+            deck.SpeechMoraCount = meta.SpeechMoraCount ?? 0;
 
             if (deckType is MediaType.Manga or MediaType.Anime or MediaType.Movie or MediaType.Drama or MediaType.Audio)
                 deck.SentenceCount = 0;

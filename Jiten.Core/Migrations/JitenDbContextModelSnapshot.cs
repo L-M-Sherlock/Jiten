@@ -93,10 +93,10 @@ namespace Jiten.Core.Migrations
                     b.Property<int>("SentenceCount")
                         .HasColumnType("integer");
 
-                    b.Property<long>("SubtitleDurationMs")
+                    b.Property<long>("SpeechDuration")
                         .HasColumnType("bigint");
 
-                    b.Property<long>("SubtitleMoraCount")
+                    b.Property<long>("SpeechMoraCount")
                         .HasColumnType("bigint");
 
                     b.Property<int>("UniqueKanjiCount")

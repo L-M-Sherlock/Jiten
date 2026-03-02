@@ -339,8 +339,8 @@ public partial class AdminController(
         {
             var (text, stats) = await GetTextFromFile(model.File);
             deck.RawText!.RawText = text;
-            deck.SubtitleDurationMs = stats.DurationMs;
-            deck.SubtitleMoraCount = stats.MoraCount;
+            deck.SpeechDuration = stats.DurationMs;
+            deck.SpeechMoraCount = stats.MoraCount;
         }
 
 
@@ -475,8 +475,8 @@ public partial class AdminController(
                     {
                         var (text, stats) = await GetTextFromFile(subdeck.File);
                         existingSubdeck.RawText!.RawText = text;
-                        existingSubdeck.SubtitleDurationMs = stats.DurationMs;
-                        existingSubdeck.SubtitleMoraCount = stats.MoraCount;
+                        existingSubdeck.SpeechDuration = stats.DurationMs;
+                        existingSubdeck.SpeechMoraCount = stats.MoraCount;
                     }
                 }
                 else
@@ -491,8 +491,8 @@ public partial class AdminController(
                     {
                         var (text, stats) = await GetTextFromFile(subdeck.File);
                         newDeck.RawText = new DeckRawText(text);
-                        newDeck.SubtitleDurationMs = stats.DurationMs;
-                        newDeck.SubtitleMoraCount = stats.MoraCount;
+                        newDeck.SpeechDuration = stats.DurationMs;
+                        newDeck.SpeechMoraCount = stats.MoraCount;
                     }
 
                     deck.Children.Add(newDeck);
@@ -577,7 +577,7 @@ public partial class AdminController(
 
         return Ok(new { Message = $"Media deck {deck.DeckId} updated successfully" });
 
-        async Task<(string text, SubtitleMoraStats stats)> GetTextFromFile(IFormFile file)
+        async Task<(string text, SubtitleStats stats)> GetTextFromFile(IFormFile file)
         {
             var fileExtension = Path.GetExtension(file.FileName).ToLowerInvariant();
             var filePath = Path.Join(path, $"{Guid.NewGuid()}{fileExtension}");
@@ -613,15 +613,15 @@ public partial class AdminController(
             return await System.IO.File.ReadAllTextAsync(filePath);
         }
 
-        static async Task<SubtitleMoraStats> ComputeSubtitleStatsIfNeeded(string filePath, string fileExtension)
+        static async Task<SubtitleStats> ComputeSubtitleStatsIfNeeded(string filePath, string fileExtension)
         {
             if (fileExtension is not (".ass" or ".srt" or ".ssa"))
-                return SubtitleMoraStats.Empty;
+                return SubtitleStats.Empty;
 
             var extractor = new SubtitleExtractor();
             var items = await extractor.ExtractItems(filePath);
             if (items.Count == 0)
-                return SubtitleMoraStats.Empty;
+                return SubtitleStats.Empty;
 
             return await SubtitleMoraRateCalculator.ComputeAsync(items);
         }
@@ -1181,7 +1181,7 @@ public partial class AdminController(
                                 .ToList();
 
             List<string> extractedFiles = [];
-            var subtitleStatsByFile = new Dictionary<string, SubtitleMoraStats>();
+            var subtitleStatsByFile = new Dictionary<string, SubtitleStats>();
             foreach (var file in subtitleFiles)
             {
                 var text = await extractor.Extract(file);
@@ -1210,8 +1210,8 @@ public partial class AdminController(
                     {
                         FilePath = file,
                         OriginalTitle = $"Episode {i + 1}",
-                        SubtitleDurationMs = stats.DurationMs,
-                        SubtitleMoraCount = stats.MoraCount
+                        SpeechDuration = stats.DurationMs,
+                        SpeechMoraCount = stats.MoraCount
                     });
                 }
             }
@@ -1221,8 +1221,8 @@ public partial class AdminController(
                 metadata.FilePath = file;
                 if (subtitleStatsByFile.TryGetValue(file, out var stats))
                 {
-                    metadata.SubtitleDurationMs = stats.DurationMs;
-                    metadata.SubtitleMoraCount = stats.MoraCount;
+                    metadata.SpeechDuration = stats.DurationMs;
+                    metadata.SpeechMoraCount = stats.MoraCount;
                 }
             }
             else

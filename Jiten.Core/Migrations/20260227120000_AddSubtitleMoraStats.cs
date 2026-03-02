@@ -11,7 +11,7 @@ namespace Jiten.Core.Migrations
         protected override void Up(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.AddColumn<long>(
-                name: "SubtitleDurationMs",
+                name: "SpeechDuration",
                 schema: "jiten",
                 table: "Decks",
                 type: "bigint",
@@ -19,7 +19,7 @@ namespace Jiten.Core.Migrations
                 defaultValue: 0L);
 
             migrationBuilder.AddColumn<long>(
-                name: "SubtitleMoraCount",
+                name: "SpeechMoraCount",
                 schema: "jiten",
                 table: "Decks",
                 type: "bigint",
@@ -31,12 +31,12 @@ namespace Jiten.Core.Migrations
         protected override void Down(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.DropColumn(
-                name: "SubtitleDurationMs",
+                name: "SpeechDuration",
                 schema: "jiten",
                 table: "Decks");
 
             migrationBuilder.DropColumn(
-                name: "SubtitleMoraCount",
+                name: "SpeechMoraCount",
                 schema: "jiten",
                 table: "Decks");
         }

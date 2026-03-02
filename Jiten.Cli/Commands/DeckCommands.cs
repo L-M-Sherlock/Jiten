@@ -169,7 +169,7 @@ public class DeckCommands(CliContext context)
             }
 
             List<string> lines = [];
-            Jiten.Parser.SubtitleMoraStats? subtitleStats = null;
+            Jiten.Parser.SubtitleStats? subtitleStats = null;
             var extension = Path.GetExtension(filePath)?.ToLowerInvariant();
 
             if (extension == ".epub")
@@ -232,8 +232,8 @@ public class DeckCommands(CliContext context)
             deck.MediaType = deckType;
             if (subtitleStats.HasValue)
             {
-                deck.SubtitleDurationMs = subtitleStats.Value.DurationMs;
-                deck.SubtitleMoraCount = subtitleStats.Value.MoraCount;
+                deck.SpeechDuration = subtitleStats.Value.DurationMs;
+                deck.SpeechMoraCount = subtitleStats.Value.MoraCount;
             }
 
             if (deckType is MediaType.Manga or MediaType.Anime or MediaType.Movie or MediaType.Drama or MediaType.Audio)
