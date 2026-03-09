@@ -23,7 +23,11 @@
   const showIssueDialog = ref(false);
   const isDescriptionExpanded = ref(false);
   const showIgnoreOverlay = ref(false);
+  const showCompletionDialog = ref(false);
+  const completionSuggestions = ref<import('~/types/types').ComparisonSuggestionDto[]>([]);
+  const completionComparisonIndex = ref(0);
   const menu = ref();
+  const difficultyRef = ref<{ tooltip: string }>();
 
   const store = useJitenStore();
   const authStore = useAuthStore();
@@ -71,6 +75,44 @@
     showIgnoreOverlay.value = false;
   };
 
+  const { fetchSuggestions } = useDifficultyVotes();
+  const completionVoteTimestamps = ref<number[]>([]);
+  const showCalibrationBanner = ref(false);
+  let calibrationTimer: ReturnType<typeof setTimeout> | undefined;
+
+  watch(showCompletionDialog, (newVal, oldVal) => {
+    if (oldVal && !newVal && Math.random() < 0.25) {
+      showCalibrationBanner.value = true;
+      clearTimeout(calibrationTimer);
+      calibrationTimer = setTimeout(() => { showCalibrationBanner.value = false; }, 8000);
+    }
+  });
+
+  const openRatingDialog = () => {
+    showCompletionDialog.value = true;
+    completionComparisonIndex.value = 0;
+    fetchSuggestions(props.deck.deckId).then(s => {
+      completionSuggestions.value = s.slice(0, 2).map(pair =>
+        pair.deckA.id === props.deck.deckId ? pair : { deckA: pair.deckB, deckB: pair.deckA },
+      );
+    });
+  };
+
+  const handleMarkCompleted = async () => {
+    await setStatus(DeckStatus.Completed);
+    if (authStore.isAuthenticated) {
+      openRatingDialog();
+    }
+  };
+
+  const completionCurrentPair = computed(() =>
+    completionComparisonIndex.value < completionSuggestions.value.length
+      ? completionSuggestions.value[completionComparisonIndex.value]
+      : null
+  );
+
+  const advanceCompletion = () => { completionComparisonIndex.value++; };
+
   const menuItems = computed(() => [
     {
       label: props.deck.isFavourite ? 'Unfavourite' : 'Favourite',
@@ -81,6 +123,12 @@
       label: props.deck.isIgnored ? 'Unignore' : 'Ignore',
       icon: props.deck.isIgnored ? 'pi pi-eye' : 'pi pi-eye-slash',
       command: toggleIgnore,
+    },
+    {
+      label: 'Rate difficulty',
+      icon: 'pi pi-gauge',
+      visible: props.deck.status === DeckStatus.Completed,
+      command: openRatingDialog,
     },
     {
       label: 'Set status',
@@ -100,7 +148,7 @@
         },
         {
           label: 'Completed',
-          command: () => setStatus(DeckStatus.Completed),
+          command: () => handleMarkCompleted(),
         },
         {
           label: 'Dropped',
@@ -157,6 +205,7 @@
     if (!authStore.isAuthenticated || store.hideCoverageBorders || (props.deck.coverage == 0 && props.deck.uniqueCoverage == 0)) return 'none';
     return getCoverageBorder(props.deck.coverage);
   });
+
 
 </script>
 
@@ -284,16 +333,16 @@
                       <span class="text-gray-600 dark:text-gray-300 truncate pr-2 font-medium">Average sentence length</span>
                       <span class="tabular-nums font-semibold">{{ deck.averageSentenceLength.toFixed(1) }}</span>
                     </div>
-                    <div v-if="deck.difficulty != -1" class="flex justify-between flex-wrap stat-row">
-                      <Tooltip
-                        :content="'This is a work in progress.\nIf you find scores that are way higher or lower than they should be, please report them so the algorithm can be refined further.\nDifficulties are only comparable within their own type (novels or shows).'"
-                      >
-                        <span class="text-gray-600 dark:text-gray-300 truncate pr-2 font-medium">
-                          Difficulty
-                          <span class="text-purple-500 text-xs align-super"> beta </span>
-                        </span>
+                    <div v-if="deck.difficulty != -1" class="stat-row cursor-help">
+                      <Tooltip :content="difficultyRef?.tooltip ?? ''" block>
+                        <div class="flex justify-between flex-wrap">
+                          <span class="text-gray-600 dark:text-gray-300 truncate pr-2 font-medium">
+                            Difficulty
+                            <i class="pi pi-info-circle text-primary-400 text-xs ml-0.5" />
+                          </span>
+                          <DifficultyDisplay ref="difficultyRef" :difficulty="deck.difficulty" :difficulty-raw="deck.difficultyRaw" :user-adjustment="deck.userAdjustment" :vote-count="deck.distinctVoterCount || 0" />
+                        </div>
                       </Tooltip>
-                      <DifficultyDisplay :difficulty="deck.difficulty" :difficulty-raw="deck.difficultyRaw" />
                     </div>
 
                     <div v-if="speechSpeed > 0" class="flex justify-between flex-wrap stat-row">
@@ -457,6 +506,47 @@
     <ReportIssueDialog :visible="showIssueDialog" @update:visible="showIssueDialog = $event" :deck="deck" />
 
     <TieredMenu ref="menu" :model="menuItems" popup />
+
+    <Dialog v-model:visible="showCompletionDialog" modal header="Rate Difficulty" class="w-full" style="max-width: 40rem" :closable="true">
+      <div class="flex flex-col gap-6">
+        <div>
+          <p class="text-sm text-muted-color mb-2">How difficult did you find <strong>{{ localiseTitle(deck) }}</strong>?</p>
+          <DifficultyRating :deck-id="deck.deckId" @rated="() => {}" />
+        </div>
+
+        <template v-if="completionSuggestions.length > 0">
+          <Divider />
+          <div v-if="completionCurrentPair">
+            <p class="text-sm text-muted-color mb-2">Compare with other media you've completed:</p>
+            <DifficultyComparison
+              :deck-a="completionCurrentPair.deckA"
+              :deck-b="completionCurrentPair.deckB"
+              :vote-timestamps="completionVoteTimestamps"
+              @voted="advanceCompletion"
+              @skipped="advanceCompletion"
+            />
+          </div>
+          <div v-else class="flex flex-col items-center gap-3 py-6">
+            <i class="pi pi-check-circle text-green-500 text-4xl" />
+            <p class="text-sm text-muted-color text-center">
+              Thanks for helping refine the difficulties! <br/>
+              <NuxtLink to="/ratings" target="_blank" class="text-primary-500 hover:underline font-semibold">
+                Compare more media →
+              </NuxtLink>
+            </p>
+          </div>
+        </template>
+
+        <div class="flex justify-end items-center pt-2">
+          <Button label="Done" severity="secondary" @click="showCompletionDialog = false" />
+        </div>
+      </div>
+    </Dialog>
+
+    <Message v-if="showCalibrationBanner" severity="info" :closable="true" @close="showCalibrationBanner = false" class="mt-2">
+      Help refine the difficulties -
+      <NuxtLink to="/ratings" class="font-semibold underline" target="_blank">compare more media</NuxtLink>
+    </Message>
   </div>
 </template>
 

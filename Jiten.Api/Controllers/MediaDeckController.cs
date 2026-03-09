@@ -577,6 +577,7 @@ public class MediaDeckController(
                      .Include(d => d.DeckGenres)
                      .Include(d => d.DeckTags)
                      .ThenInclude(dt => dt.Tag)
+                     .Include(d => d.DeckDifficulty)
                      .Include(d => d.RelationshipsAsSource)
                      .ThenInclude(r => r.TargetDeck)
                      .Include(d => d.RelationshipsAsTarget)
@@ -759,6 +760,7 @@ public class MediaDeckController(
                                          .Include(d => d.DeckGenres)
                                          .Include(d => d.DeckTags)
                                          .ThenInclude(dt => dt.Tag)
+                                         .Include(d => d.DeckDifficulty)
                                          .Include(d => d.RelationshipsAsSource)
                                          .ThenInclude(r => r.TargetDeck)
                                          .Include(d => d.RelationshipsAsTarget)
@@ -1004,6 +1006,7 @@ public class MediaDeckController(
                                      .Include(d => d.DeckGenres)
                                      .Include(d => d.DeckTags)
                                      .ThenInclude(dt => dt.Tag)
+                                     .Include(d => d.DeckDifficulty)
                                      .Include(d => d.RelationshipsAsSource)
                                      .ThenInclude(r => r.TargetDeck)
                                      .Include(d => d.RelationshipsAsTarget)
@@ -1261,6 +1264,7 @@ public class MediaDeckController(
                                 .Include(d => d.DeckGenres)
                                 .Include(d => d.DeckTags)
                                 .ThenInclude(dt => dt.Tag)
+                                .Include(d => d.DeckDifficulty)
                                 .Include(d => d.RelationshipsAsSource)
                                 .ThenInclude(r => r.TargetDeck)
                                 .Include(d => d.RelationshipsAsTarget)
@@ -1270,9 +1274,9 @@ public class MediaDeckController(
         if (deck == null)
             return new PaginatedResponse<DeckDetailDto?>(null, 0, pageSize, offset ?? 0);
 
-        var parentDeck = await context.Decks.AsNoTracking().Include(d => d.DeckGenres).Include(d => d.DeckTags).ThenInclude(dt => dt.Tag)
+        var parentDeck = await context.Decks.AsNoTracking().Include(d => d.DeckGenres).Include(d => d.DeckTags).ThenInclude(dt => dt.Tag).Include(d => d.DeckDifficulty)
                                       .FirstOrDefaultAsync(d => d.DeckId == deck.ParentDeckId);
-        var subDecks = context.Decks.AsNoTracking().Include(d => d.DeckGenres).Include(d => d.DeckTags).ThenInclude(dt => dt.Tag)
+        var subDecks = context.Decks.AsNoTracking().Include(d => d.DeckGenres).Include(d => d.DeckTags).ThenInclude(dt => dt.Tag).Include(d => d.DeckDifficulty)
                               .Where(d => d.ParentDeckId == id);
         int totalCount = await subDecks.CountAsync();
 
@@ -2198,7 +2202,9 @@ public class MediaDeckController(
                                                                         Segment = p.Segment, Difficulty = p.Difficulty, Peak = p.Peak,
                                                                         ChildStartOrder = p.ChildStartOrder, ChildEndOrder = p.ChildEndOrder
                                                                     }).ToList(),
-                   LastUpdated = difficulty.LastUpdated
+                   LastUpdated = difficulty.LastUpdated,
+                   DistinctVoterCount = difficulty.DistinctVoterCount,
+                   UserAdjustment = difficulty.UserAdjustment
                };
     }
 

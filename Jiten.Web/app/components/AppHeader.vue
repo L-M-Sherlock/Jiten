@@ -152,6 +152,7 @@
           <nuxt-link v-if="auth.isAuthenticated" to="/profile" :class="route.path.startsWith('/profile') ? 'font-semibold !text-purple-200' : '!text-white'">Profile</nuxt-link>
           <nuxt-link v-if="auth.isAuthenticated" to="/settings" :class="route.path === '/settings' ? 'font-semibold !text-purple-200' : '!text-white'">Settings</nuxt-link>
           <nuxt-link to="/other" :class="route.path === '/other' ? 'font-semibold !text-purple-200' : '!text-white'">Tools</nuxt-link>
+          <nuxt-link v-if="auth.isAuthenticated" to="/ratings" :class="route.path === '/ratings' ? 'font-semibold !text-purple-200' : '!text-white'">Ratings</nuxt-link>
           <nuxt-link to="/faq" :class="route.path === '/faq' ? 'font-semibold !text-purple-200' : '!text-white'">FAQ</nuxt-link>
           <nuxt-link v-if="auth.isAuthenticated && auth.isAdmin && store.displayAdminFunctions" to="/Dashboard" :class="route.path === '/Dashboard' ? 'font-semibold !text-purple-200' : '!text-white'">Dashboard</nuxt-link>
           <a v-if="auth.isAuthenticated" href="#" class="!text-white cursor-pointer" @click.prevent="auth.logout()">Logout</a>
@@ -196,6 +197,7 @@
             <nuxt-link v-if="auth.isAuthenticated" to="/profile" class="py-2 px-3" :class="route.path.startsWith('/profile') ? 'font-semibold !text-purple-200' : '!text-white'" @click="mobileMenuOpen = false">Profile</nuxt-link>
             <nuxt-link v-if="auth.isAuthenticated" to="/settings" class="py-2 px-3" :class="route.path === '/settings' ? 'font-semibold !text-purple-200' : '!text-white'" @click="mobileMenuOpen = false">Settings</nuxt-link>
             <nuxt-link to="/other" class="py-2 px-3" :class="route.path === '/other' ? 'font-semibold !text-purple-200' : '!text-white'" @click="mobileMenuOpen = false">Tools</nuxt-link>
+            <nuxt-link v-if="auth.isAuthenticated" to="/ratings" class="py-2 px-3" :class="route.path === '/ratings' ? 'font-semibold !text-purple-200' : '!text-white'" @click="mobileMenuOpen = false">Compare</nuxt-link>
             <nuxt-link to="/faq" class="py-2 px-3" :class="route.path === '/faq' ? 'font-semibold !text-purple-200' : '!text-white'" @click="mobileMenuOpen = false">FAQ</nuxt-link>
             <nuxt-link
               v-if="auth.isAuthenticated && auth.isAdmin && store.displayAdminFunctions"

@@ -195,3 +195,24 @@ export enum RequestAction {
   ContributionValidated = 60,
   ContributionRevoked = 61,
 }
+
+const proseTypes = new Set([MediaType.Novel, MediaType.WebNovel, MediaType.VisualNovel]);
+const visualTextTypes = new Set([MediaType.Manga, MediaType.VideoGame]);
+const audioVisualTypes = new Set([MediaType.Anime, MediaType.Drama, MediaType.Movie, MediaType.Audio]);
+const nonFictionTypes = new Set([MediaType.NonFiction]);
+const allTextTypes = new Set([...proseTypes, ...visualTextTypes, ...nonFictionTypes]);
+
+export function areComparable(a: MediaType, b: MediaType): boolean {
+  if ((allTextTypes.has(a) && audioVisualTypes.has(b)) ||
+      (audioVisualTypes.has(a) && allTextTypes.has(b)))
+    return false;
+  return true;
+}
+
+export enum ComparisonOutcome {
+  MuchEasier = -2,
+  Easier = -1,
+  Same = 0,
+  Harder = 1,
+  MuchHarder = 2
+}

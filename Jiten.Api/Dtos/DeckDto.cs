@@ -46,6 +46,8 @@ public class DeckDto
     public DeckStatus? Status { get; set; }
     public bool? IsFavourite { get; set; }
     public bool? IsIgnored { get; set; }
+    public int DistinctVoterCount { get; set; }
+    public decimal UserAdjustment { get; set; }
 
     public DeckDto()
     {
@@ -92,6 +94,7 @@ public class DeckDto
             Name = dt.Tag.Name,
             Percentage = dt.Percentage
         }).OrderByDescending(t => t.Percentage).ToList();
+        MapVoteFields(deck);
     }
 
     public DeckDto(Deck deck, ExampleSentenceDto? exampleSentence = null)
@@ -134,6 +137,15 @@ public class DeckDto
             Name = dt.Tag.Name,
             Percentage = dt.Percentage
         }).OrderByDescending(t => t.Percentage).ToList();
+        MapVoteFields(deck);
+    }
+
+    private void MapVoteFields(Deck deck)
+    {
+        var dd = deck.DeckDifficulty;
+        if (dd == null) return;
+        DistinctVoterCount = dd.DistinctVoterCount;
+        UserAdjustment = dd.UserAdjustment;
     }
 
     /// <summary>
