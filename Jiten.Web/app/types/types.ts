@@ -19,6 +19,7 @@ export interface Deck {
   difficulty: number;
   difficultyRaw: number;
   difficultyOverride: number;
+  difficultyAlgorithmic: number;
   averageSentenceLength: number;
   speechDuration: number;
   speechMoraCount: number;

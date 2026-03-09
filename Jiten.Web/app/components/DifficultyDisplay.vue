@@ -7,6 +7,7 @@
   const props = defineProps<{
     difficulty: number;
     difficultyRaw?: number;
+    difficultyAlgorithmic?: number;
     userAdjustment?: number;
     voteCount?: number;
     useStars?: boolean;
@@ -27,9 +28,7 @@
   ] as const;
 
   const effectiveRaw = computed(() => {
-    const base = props.difficultyRaw;
-    const adj = props.userAdjustment ?? 0;
-    return Math.min(Math.max(base + adj, 0), 5);
+    return Math.min(Math.max(props.difficultyRaw ?? props.difficulty, 0), 5);
   });
 
   const effectiveBucket = computed(() => {
@@ -76,11 +75,11 @@
   });
 
   const rawBucket = computed(() => {
-    const raw = props.difficultyRaw ?? props.difficulty;
+    const raw = props.difficultyAlgorithmic ?? props.difficultyRaw ?? props.difficulty;
     return Math.min(Math.max(Math.floor(raw), 0), 5);
   });
 
-  const rawValue = computed(() => formatDifficultyValue(props.difficultyRaw ?? props.difficulty, usePercentage.value, 1));
+  const rawValue = computed(() => formatDifficultyValue(props.difficultyAlgorithmic ?? props.difficultyRaw ?? props.difficulty, usePercentage.value, 1));
 
   const tooltip = computed(() => {
     const parts: string[] = [];
@@ -123,7 +122,7 @@
 </script>
 
 <template>
-  <span :class="['tabular-nums font-bold', difficultyClass]">
+  <span :class="['tabular-nums font-bold whitespace-nowrap', difficultyClass]">
     <span v-if="arrowIndicator && !useStars" :class="['text-xs mr-0.5', arrowClass]">{{ arrowIndicator }}</span>
     {{ difficultyText }}
     <span v-if="voteCount && voteCount >= 3" class="text-xs font-normal text-muted-color ml-1"></span>

@@ -354,7 +354,7 @@
                             Difficulty
                             <i class="pi pi-info-circle text-primary-400 text-xs ml-0.5" />
                           </span>
-                          <DifficultyDisplay ref="difficultyRef" :difficulty="deck.difficulty" :difficulty-raw="deck.difficultyRaw" :user-adjustment="deck.userAdjustment" :vote-count="deck.distinctVoterCount || 0" />
+                          <DifficultyDisplay ref="difficultyRef" :difficulty="deck.difficulty" :difficulty-raw="deck.difficultyRaw" :difficulty-algorithmic="deck.difficultyAlgorithmic" :user-adjustment="deck.userAdjustment" :vote-count="deck.distinctVoterCount || 0" />
                         </div>
                       </Tooltip>
                     </div>

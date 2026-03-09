@@ -22,6 +22,7 @@ public class DeckDto
     public int Difficulty { get; set; }
     public float DifficultyRaw { get; set; }
     public float DifficultyOverride { get; set; }
+    public float DifficultyAlgorithmic { get; set; }
     public int SentenceCount { get; set; }
     public long SpeechDuration { get; set; }
     public long SpeechMoraCount { get; set; }
@@ -70,8 +71,10 @@ public class DeckDto
         UniqueWordUsedOnceCount = deck.UniqueWordUsedOnceCount;
         UniqueKanjiCount = deck.UniqueKanjiCount;
         UniqueKanjiUsedOnceCount = deck.UniqueKanjiUsedOnceCount;
-        Difficulty = MapDifficulty(deck.GetDifficulty());
-        DifficultyRaw = deck.GetDifficulty();
+        DifficultyAlgorithmic = deck.GetDifficulty();
+        var adjusted = GetAdjustedDifficulty(deck);
+        DifficultyRaw = adjusted;
+        Difficulty = MapDifficulty(adjusted);
         DifficultyOverride = deck.DifficultyOverride;
         SentenceCount = deck.SentenceCount;
         SpeechDuration = deck.SpeechDuration;
@@ -114,8 +117,10 @@ public class DeckDto
         UniqueWordUsedOnceCount = deck.UniqueWordUsedOnceCount;
         UniqueKanjiCount = deck.UniqueKanjiCount;
         UniqueKanjiUsedOnceCount = deck.UniqueKanjiUsedOnceCount;
-        Difficulty = MapDifficulty(deck.GetDifficulty());
-        DifficultyRaw = deck.GetDifficulty();
+        DifficultyAlgorithmic = deck.GetDifficulty();
+        var adjusted = GetAdjustedDifficulty(deck);
+        DifficultyRaw = adjusted;
+        Difficulty = MapDifficulty(adjusted);
         DifficultyOverride = deck.DifficultyOverride;
         SentenceCount = deck.SentenceCount;
         SpeechDuration = deck.SpeechDuration;
@@ -148,12 +153,17 @@ public class DeckDto
         UserAdjustment = dd.UserAdjustment;
     }
 
+    private float GetAdjustedDifficulty(Deck deck)
+    {
+        var baseDifficulty = deck.GetDifficulty();
+        var adjustment = deck.DeckDifficulty?.UserAdjustment ?? 0;
+        return (float)(baseDifficulty + (float)adjustment);
+    }
+
     /// <summary>
     /// Remap the difficulty to an int while taking into account the biases of the model
     /// This is subject to change with a different training
     /// </summary>
-    /// <param name="difficulty"></param>
-    /// <returns></returns>
     private int MapDifficulty(float difficulty)
     {
         if (difficulty < 1.01)
