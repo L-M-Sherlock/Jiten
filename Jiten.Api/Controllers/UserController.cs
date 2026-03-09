@@ -1716,7 +1716,8 @@ public class UserController(
         [FromQuery] int pageSize = 100,
         [FromQuery] string sortBy = "occurrences",
         [FromQuery] bool descending = true,
-        [FromQuery] string displayFilter = "all")
+        [FromQuery] string displayFilter = "all",
+        [FromQuery] string? search = null)
     {
         var user = await userContext.Users
                                     .AsNoTracking()
@@ -1793,6 +1794,12 @@ public class UserController(
 
         // Materialise the aggregated words for filtering and sorting
         var allAggregatedWords = await aggregatedWordsQuery.ToListAsync();
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var matchingWordIds = await SearchHelper.ResolveSearchWordIds(jitenContext, search);
+            allAggregatedWords = allAggregatedWords.Where(aw => matchingWordIds.Contains(aw.WordId)).ToList();
+        }
 
         // Apply displayFilter if authenticated and filter is not "all"
         if (userService.IsAuthenticated && !string.IsNullOrEmpty(displayFilter) && displayFilter != "all")

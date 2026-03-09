@@ -657,22 +657,9 @@ public class VocabularyController(JitenDbContext context, IDbContextFactory<Jite
             .ToList();
     }
 
-    private static bool ContainsJapanese(string text)
-    {
-        return text.Any(c =>
-            (c >= '\u3040' && c <= '\u309F') ||
-            (c >= '\u30A0' && c <= '\u30FF') ||
-            (c >= '\u4E00' && c <= '\u9FFF') ||
-            (c >= '\u3400' && c <= '\u4DBF'));
-    }
+    private static bool ContainsJapanese(string text) => SearchHelper.ContainsJapanese(text);
 
-    private static string SanitizeLikeInput(string input)
-    {
-        return input
-            .Replace("\\", "\\\\")
-            .Replace("%", "\\%")
-            .Replace("_", "\\_");
-    }
+    private static string SanitizeLikeInput(string input) => SearchHelper.SanitizeLikeInput(input);
 
     private static string SanitizeRegexInput(string input)
     {

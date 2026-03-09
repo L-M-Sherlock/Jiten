@@ -1103,6 +1103,7 @@ public class MediaDeckController(
     /// <param name="sortOrder">Ascending or Descending.</param>
     /// <param name="offset">Pagination offset.</param>
     /// <param name="displayFilter">When authenticated: all | known | young | mature | mastered | blacklisted | unknown.</param>
+    /// <param name="search">Optional text search filter (Japanese, romaji, or English).</param>
     /// <returns>Paginated deck vocabulary list.</returns>
     [HttpGet("{id}/vocabulary")]
     // [ResponseCache(Duration = 600, VaryByQueryKeys = ["id", "sortBy", "sortOrder", "offset"])]
@@ -1110,7 +1111,8 @@ public class MediaDeckController(
     [ProducesResponseType(typeof(PaginatedResponse<DeckVocabularyListDto?>), StatusCodes.Status200OK)]
     public async Task<PaginatedResponse<DeckVocabularyListDto?>> GetVocabulary(int id, string? sortBy = "",
                                                                                SortOrder sortOrder = SortOrder.Ascending,
-                                                                               int? offset = 0, string displayFilter = "all")
+                                                                               int? offset = 0, string displayFilter = "all",
+                                                                               string? search = null)
     {
         int pageSize = 100;
 
@@ -1123,6 +1125,12 @@ public class MediaDeckController(
         var parentDeckDto = parentDeck != null ? new DeckDto(parentDeck) : null;
 
         var query = context.DeckWords.AsNoTracking().Where(dw => dw.DeckId == id);
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var matchingWordIds = await SearchHelper.ResolveSearchWordIds(context, search);
+            query = query.Where(dw => matchingWordIds.Contains(dw.WordId));
+        }
 
         if (currentUserService.IsAuthenticated && !string.IsNullOrEmpty(displayFilter) && displayFilter != "all")
         {
