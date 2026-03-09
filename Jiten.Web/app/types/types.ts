@@ -577,6 +577,7 @@ export interface MediaRequestCommentDto {
   userName?: string;
   upload?: MediaRequestUploadDto;
   createdAt: string;
+  updatedAt?: string;
 }
 
 export interface MediaRequestUploadDto {

@@ -679,6 +679,7 @@ public class JitenDbContext : DbContext
             entity.Property(c => c.UserId).IsRequired().HasMaxLength(36);
             entity.Property(c => c.Text).HasMaxLength(500);
             entity.Property(c => c.CreatedAt).IsRequired();
+            entity.Property(c => c.UpdatedAt);
 
             entity.HasOne(c => c.MediaRequest)
                   .WithMany(mr => mr.Comments)
