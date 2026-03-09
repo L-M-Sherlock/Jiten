@@ -76,8 +76,9 @@
     showIgnoreOverlay.value = false;
   };
 
-  const { fetchSuggestions } = useDifficultyVotes();
+  const { fetchSuggestions, fetchRating } = useDifficultyVotes();
   const completionVoteTimestamps = ref<number[]>([]);
+  const existingRating = ref<number | null>(null);
   const showCalibrationBanner = ref(false);
   let calibrationTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -91,15 +92,19 @@
 
   const ratingDeckId = ref(props.deck.deckId);
 
-  const openRatingDialog = (deckId?: number) => {
+  const openRatingDialog = async (deckId?: number) => {
     ratingDeckId.value = deckId ?? props.deck.deckId;
+    existingRating.value = null;
     showCompletionDialog.value = true;
     completionComparisonIndex.value = 0;
-    fetchSuggestions(ratingDeckId.value).then(s => {
-      completionSuggestions.value = s.slice(0, 2).map(pair =>
-        pair.deckA.id === ratingDeckId.value ? pair : { deckA: pair.deckB, deckB: pair.deckA },
-      );
-    });
+    const [rating, suggestions] = await Promise.all([
+      fetchRating(ratingDeckId.value),
+      fetchSuggestions(ratingDeckId.value),
+    ]);
+    existingRating.value = rating;
+    completionSuggestions.value = suggestions.slice(0, 2).map(pair =>
+      pair.deckA.id === ratingDeckId.value ? pair : { deckA: pair.deckB, deckB: pair.deckA },
+    );
   };
 
   const handleMarkCompleted = async () => {
@@ -109,13 +114,15 @@
       emit('parent-status-changed', response.parentDeckId, response.parentStatus);
 
       if (response.parentStatus === DeckStatus.Completed && authStore.isAuthenticated) {
-        openRatingDialog(response.parentDeckId);
+        const rating = await fetchRating(response.parentDeckId);
+        if (rating == null) openRatingDialog(response.parentDeckId);
         return;
       }
     }
 
     if (authStore.isAuthenticated && !props.deck.parentDeckId) {
-      openRatingDialog();
+      const rating = await fetchRating(props.deck.deckId);
+      if (rating == null) openRatingDialog();
     }
   };
 
@@ -142,7 +149,7 @@
       label: 'Rate difficulty',
       icon: 'pi pi-gauge',
       visible: props.deck.status === DeckStatus.Completed && !props.deck.parentDeckId,
-      command: openRatingDialog,
+      command: () => { openRatingDialog(); },
     },
     {
       label: 'Set status',
@@ -525,7 +532,7 @@
       <div class="flex flex-col gap-6">
         <div>
           <p class="text-sm text-muted-color mb-2">How difficult did you find <strong>{{ ratingDeckId === deck.deckId ? localiseTitle(deck) : 'this series' }}</strong>?</p>
-          <DifficultyRating :deck-id="ratingDeckId" @rated="() => {}" />
+          <DifficultyRating :deck-id="ratingDeckId" :current-rating="existingRating" @rated="() => {}" />
         </div>
 
         <template v-if="completionSuggestions.length > 0">

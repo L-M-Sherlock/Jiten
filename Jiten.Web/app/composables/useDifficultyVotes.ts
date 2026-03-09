@@ -117,6 +117,16 @@ export function useDifficultyVotes() {
     }
   };
 
+  const fetchRating = async (deckId: number): Promise<number | null> => {
+    error.value = null;
+    try {
+      const result = await $api<{ rating: number }>(`difficulty-votes/rating/${deckId}`);
+      return result?.rating ?? null;
+    } catch {
+      return null;
+    }
+  };
+
   const submitRating = async (deckId: number, rating: number): Promise<boolean> => {
     error.value = null;
     try {
@@ -191,6 +201,7 @@ export function useDifficultyVotes() {
 
   return {
     error,
+    fetchRating,
     fetchSuggestions,
     fetchCompletedDecks,
     fetchUnratedDecks,

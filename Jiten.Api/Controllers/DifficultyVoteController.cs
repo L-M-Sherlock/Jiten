@@ -162,6 +162,21 @@ public class DifficultyVoteController(
         return Results.Ok(new { id = rating.Id });
     }
 
+    [HttpGet("rating/{deckId:int}")]
+    public async Task<IResult> GetRating(int deckId)
+    {
+        var userId = currentUserService.UserId;
+        if (string.IsNullOrEmpty(userId))
+            return Results.Unauthorized();
+
+        var rating = await context.DifficultyRatings
+            .FirstOrDefaultAsync(r => r.UserId == userId && r.DeckId == deckId);
+        if (rating == null)
+            return Results.NotFound();
+
+        return Results.Ok(new { rating = rating.Rating });
+    }
+
     [HttpDelete("rating/{deckId:int}")]
     public async Task<IResult> DeleteRating(int deckId)
     {
