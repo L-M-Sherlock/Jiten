@@ -85,9 +85,11 @@ public partial class RequestController(
 
         var totalCount = await query.CountAsync();
 
-        query = sort == "recent"
-            ? query.OrderByDescending(r => r.CreatedAt)
-            : query.OrderByDescending(r => r.UpvoteCount).ThenByDescending(r => r.CreatedAt);
+        query = sort switch {
+            "recent" => query.OrderByDescending(r => r.CreatedAt),
+            "completed" => query.OrderByDescending(r => r.CompletedAt).ThenByDescending(r => r.CreatedAt),
+            _ => query.OrderByDescending(r => r.UpvoteCount).ThenByDescending(r => r.CreatedAt),
+        };
 
         var requests = await query.Skip(offset).Take(limit).ToListAsync();
         var requestIds = requests.Select(r => r.Id).ToList();
