@@ -17,6 +17,7 @@
 
   const emit = defineEmits<{
     'update:deck': [deck: Deck];
+    'parent-status-changed': [parentDeckId: number, status: DeckStatus];
   }>();
 
   const showDownloadDialog = ref(false);
@@ -88,18 +89,31 @@
     }
   });
 
-  const openRatingDialog = () => {
+  const ratingDeckId = ref(props.deck.deckId);
+
+  const openRatingDialog = (deckId?: number) => {
+    ratingDeckId.value = deckId ?? props.deck.deckId;
     showCompletionDialog.value = true;
     completionComparisonIndex.value = 0;
-    fetchSuggestions(props.deck.deckId).then(s => {
+    fetchSuggestions(ratingDeckId.value).then(s => {
       completionSuggestions.value = s.slice(0, 2).map(pair =>
-        pair.deckA.id === props.deck.deckId ? pair : { deckA: pair.deckB, deckB: pair.deckA },
+        pair.deckA.id === ratingDeckId.value ? pair : { deckA: pair.deckB, deckB: pair.deckA },
       );
     });
   };
 
   const handleMarkCompleted = async () => {
-    await setStatus(DeckStatus.Completed);
+    const response = await setStatus(DeckStatus.Completed);
+
+    if (response?.parentDeckId != null && response.parentStatus != null) {
+      emit('parent-status-changed', response.parentDeckId, response.parentStatus);
+
+      if (response.parentStatus === DeckStatus.Completed && authStore.isAuthenticated) {
+        openRatingDialog(response.parentDeckId);
+        return;
+      }
+    }
+
     if (authStore.isAuthenticated && !props.deck.parentDeckId) {
       openRatingDialog();
     }
@@ -510,8 +524,8 @@
     <Dialog v-model:visible="showCompletionDialog" modal header="Rate Difficulty" class="w-full" style="max-width: 40rem" :closable="true">
       <div class="flex flex-col gap-6">
         <div>
-          <p class="text-sm text-muted-color mb-2">How difficult did you find <strong>{{ localiseTitle(deck) }}</strong>?</p>
-          <DifficultyRating :deck-id="deck.deckId" @rated="() => {}" />
+          <p class="text-sm text-muted-color mb-2">How difficult did you find <strong>{{ ratingDeckId === deck.deckId ? localiseTitle(deck) : 'this series' }}</strong>?</p>
+          <DifficultyRating :deck-id="ratingDeckId" @rated="() => {}" />
         </div>
 
         <template v-if="completionSuggestions.length > 0">

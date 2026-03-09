@@ -911,7 +911,72 @@ public class UserController(
             backgroundJobs.Enqueue<ComputationJob>(job => job.ComputeUserAccomplishments(userId));
         }
 
-        return Results.Ok(new { preference.DeckId, preference.Status, preference.IsFavourite, preference.IsIgnored });
+        // Auto-cascade status to parent deck
+        int? parentDeckId = null;
+        DeckStatus? parentStatus = null;
+        var deck = await jitenContext.Decks.AsNoTracking()
+                                     .Where(d => d.DeckId == deckId)
+                                     .Select(d => new { d.ParentDeckId })
+                                     .FirstOrDefaultAsync();
+
+        if (deck?.ParentDeckId != null)
+        {
+            (parentDeckId, parentStatus) = await UpdateParentDeckStatus(userId, deck.ParentDeckId.Value, request.Status);
+        }
+
+        return Results.Ok(new { preference.DeckId, preference.Status, preference.IsFavourite, preference.IsIgnored, parentDeckId, parentStatus });
+    }
+
+    private async Task<(int? ParentDeckId, DeckStatus? ParentStatus)> UpdateParentDeckStatus(string userId, int parentDeckId, DeckStatus childNewStatus)
+    {
+        var siblingIds = await jitenContext.Decks.AsNoTracking()
+                                           .Where(d => d.ParentDeckId == parentDeckId)
+                                           .Select(d => d.DeckId)
+                                           .ToListAsync();
+
+        var siblingStatuses = await userContext.UserDeckPreferences
+                                               .Where(p => p.UserId == userId && siblingIds.Contains(p.DeckId))
+                                               .ToDictionaryAsync(p => p.DeckId, p => p.Status);
+
+        var parentPref = await userContext.UserDeckPreferences
+                                          .FirstOrDefaultAsync(p => p.UserId == userId && p.DeckId == parentDeckId);
+
+        var previousParentStatus = parentPref?.Status ?? DeckStatus.None;
+
+        var allCompleted = siblingIds.All(id =>
+            siblingStatuses.TryGetValue(id, out var status) && status == DeckStatus.Completed);
+
+        DeckStatus? newParentStatus = null;
+
+        if (allCompleted)
+        {
+            if (previousParentStatus is DeckStatus.None or DeckStatus.Planning or DeckStatus.Ongoing)
+                newParentStatus = DeckStatus.Completed;
+        }
+        else if (childNewStatus is DeckStatus.Completed or DeckStatus.Ongoing or DeckStatus.Dropped)
+        {
+            if (previousParentStatus is DeckStatus.None or DeckStatus.Planning)
+                newParentStatus = DeckStatus.Ongoing;
+        }
+
+        if (newParentStatus == null || newParentStatus == previousParentStatus)
+            return (null, null);
+
+        if (parentPref == null)
+        {
+            parentPref = new UserDeckPreference { UserId = userId, DeckId = parentDeckId };
+            userContext.UserDeckPreferences.Add(parentPref);
+        }
+
+        parentPref.Status = newParentStatus.Value;
+        await userContext.SaveChangesAsync();
+
+        if (previousParentStatus == DeckStatus.Completed || newParentStatus == DeckStatus.Completed)
+        {
+            backgroundJobs.Enqueue<ComputationJob>(job => job.ComputeUserAccomplishments(userId));
+        }
+
+        return (parentDeckId, newParentStatus);
     }
 
     /// <summary>
