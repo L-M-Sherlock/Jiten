@@ -665,6 +665,16 @@ public class UserController(
         return Results.Ok();
     }
 
+    [HttpPost("vocabulary/blacklist/{wordId}/{readingIndex}")]
+    public async Task<IResult> BlacklistWord(int wordId, byte readingIndex)
+    {
+        var userId = userService.UserId;
+        if (string.IsNullOrEmpty(userId)) return Results.Unauthorized();
+
+        await userService.BlacklistWords([new DeckWord { WordId = wordId, ReadingIndex = readingIndex }]);
+        return Results.Ok();
+    }
+
     /// <summary>
     /// Add known words for the current user by frequency rank range (inclusive).
     /// Only readings whose per-reading frequency rank falls within the range are imported.
