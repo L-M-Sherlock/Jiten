@@ -55,13 +55,16 @@ public class DifficultyVoteController(
 
         var decks = await context.Decks.AsNoTracking()
             .Where(d => d.DeckId == request.DeckAId || d.DeckId == request.DeckBId)
-            .Select(d => new { d.DeckId, d.MediaType })
+            .Select(d => new { d.DeckId, d.MediaType, d.ParentDeckId })
             .ToListAsync();
         var deckA = decks.FirstOrDefault(d => d.DeckId == request.DeckAId);
         var deckB = decks.FirstOrDefault(d => d.DeckId == request.DeckBId);
 
         if (deckA == null || deckB == null)
             return Results.NotFound("One or both decks not found.");
+
+        if (deckA.ParentDeckId != null || deckB.ParentDeckId != null)
+            return Results.BadRequest("Difficulty comparisons are only available for parent decks, not subdecks.");
 
         var completedBothDecks = await userContext.UserDeckPreferences
             .Where(p => p.UserId == userId && p.Status == DeckStatus.Completed
@@ -126,9 +129,9 @@ public class DifficultyVoteController(
         if ((DateTime.UtcNow - user.CreatedAt).TotalDays < AccountAgeRequiredDays)
             return Results.Problem("Account must be at least 7 days old to rate.", statusCode: 403);
 
-        var deckExists = await context.Decks.AnyAsync(d => d.DeckId == request.DeckId);
+        var deckExists = await context.Decks.AnyAsync(d => d.DeckId == request.DeckId && d.ParentDeckId == null);
         if (!deckExists)
-            return Results.NotFound("Deck not found.");
+            return Results.NotFound("Deck not found or is a subdeck.");
 
         var hasCompleted = await userContext.UserDeckPreferences
             .AnyAsync(p => p.UserId == userId && p.DeckId == request.DeckId && p.Status == DeckStatus.Completed);
@@ -189,6 +192,12 @@ public class DifficultyVoteController(
             .Where(p => p.UserId == userId && p.Status == DeckStatus.Completed)
             .Select(p => p.DeckId)
             .ToListAsync();
+
+        var parentDeckIds = await context.Decks.AsNoTracking()
+            .Where(d => completedDeckIds.Contains(d.DeckId) && d.ParentDeckId == null)
+            .Select(d => d.DeckId)
+            .ToListAsync();
+        completedDeckIds = parentDeckIds;
 
         if (completedDeckIds.Count < 2)
             return Results.Ok(Array.Empty<ComparisonSuggestionDto>());
@@ -473,6 +482,12 @@ public class DifficultyVoteController(
         if (request.DeckAId == request.DeckBId)
             return Results.BadRequest("Cannot skip a pair with the same deck.");
 
+        var hasChildDeck = await context.Decks.AsNoTracking()
+            .Where(d => d.DeckId == request.DeckAId || d.DeckId == request.DeckBId)
+            .AnyAsync(d => d.ParentDeckId != null);
+        if (hasChildDeck)
+            return Results.BadRequest("Difficulty comparisons are only available for parent decks, not subdecks.");
+
         var deckLowId = Math.Min(request.DeckAId, request.DeckBId);
         var deckHighId = Math.Max(request.DeckAId, request.DeckBId);
 
@@ -524,7 +539,7 @@ public class DifficultyVoteController(
             return Results.Ok(Array.Empty<DeckSummaryDto>());
 
         var decks = await context.Decks.AsNoTracking()
-            .Where(d => unratedIds.Contains(d.DeckId))
+            .Where(d => unratedIds.Contains(d.DeckId) && d.ParentDeckId == null)
             .OrderBy(d => d.OriginalTitle)
             .Select(d => new { d.DeckId, d.OriginalTitle, d.RomajiTitle, d.EnglishTitle, d.CoverName, d.Difficulty, d.MediaType })
             .ToListAsync();
@@ -587,7 +602,7 @@ public class DifficultyVoteController(
             .ToListAsync();
 
         var decks = await context.Decks.AsNoTracking()
-            .Where(d => completedDeckIds.Contains(d.DeckId) && !blacklistedDeckIds.Contains(d.DeckId))
+            .Where(d => completedDeckIds.Contains(d.DeckId) && !blacklistedDeckIds.Contains(d.DeckId) && d.ParentDeckId == null)
             .OrderBy(d => d.OriginalTitle)
             .Select(d => new { d.DeckId, d.OriginalTitle, d.RomajiTitle, d.EnglishTitle, d.CoverName, d.Difficulty, d.MediaType })
             .ToListAsync();

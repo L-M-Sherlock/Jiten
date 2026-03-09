@@ -100,7 +100,7 @@
 
   const handleMarkCompleted = async () => {
     await setStatus(DeckStatus.Completed);
-    if (authStore.isAuthenticated) {
+    if (authStore.isAuthenticated && !props.deck.parentDeckId) {
       openRatingDialog();
     }
   };
@@ -127,7 +127,7 @@
     {
       label: 'Rate difficulty',
       icon: 'pi pi-gauge',
-      visible: props.deck.status === DeckStatus.Completed,
+      visible: props.deck.status === DeckStatus.Completed && !props.deck.parentDeckId,
       command: openRatingDialog,
     },
     {

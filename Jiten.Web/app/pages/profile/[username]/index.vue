@@ -114,12 +114,6 @@
     return num.toLocaleString();
   };
 
-  const { fetchStats } = useDifficultyVotes();
-  const votingStats = ref<{ totalComparisons: number; totalRatings: number; percentile: number | null } | null>(null);
-  if (isOwnProfile.value) {
-    fetchStats().then(s => { votingStats.value = s; });
-  }
-
   useHead(() => ({
     title: `Profile - ${displayUsername.value}`,
     meta: [{ name: 'description', content: `User profile for ${displayUsername.value}` }],
@@ -242,25 +236,6 @@
 
         <div v-else class="text-center py-4">
           <Message severity="info">No data for this category</Message>
-        </div>
-
-        <div v-if="isOwnProfile && votingStats && selectedTab === 'global' && (votingStats.totalComparisons > 0 || votingStats.totalRatings > 0)" class="grid grid-cols-2 md:grid-cols-3 gap-4 mt-4">
-          <Card class="text-center">
-            <template #content>
-              <div class="text-3xl font-bold tabular-nums text-purple-600 dark:text-purple-400">
-                {{ formatNumber(votingStats.totalComparisons) }}
-              </div>
-              <div class="text-sm text-gray-500 mt-1">Difficulty Comparisons</div>
-            </template>
-          </Card>
-          <Card v-if="votingStats.percentile !== null" class="text-center">
-            <template #content>
-              <div class="text-3xl font-bold tabular-nums text-purple-600 dark:text-purple-400">
-                Top {{ 100 - votingStats.percentile }}%
-              </div>
-              <div class="text-sm text-gray-500 mt-1">Voter Ranking</div>
-            </template>
-          </Card>
         </div>
 
         <div v-if="isOwnProfile" class="flex justify-center">

@@ -230,7 +230,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="container mx-auto p-2 md:p-4">
+  <div class="p-2 md:p-4 overflow-hidden">
     <div class="flex flex-col md:flex-row items-start md:items-center justify-between mb-6 gap-3">
       <div>
         <h1 class="text-2xl font-bold">Compare Difficulties</h1>
@@ -365,41 +365,40 @@ onMounted(async () => {
       v-if="unratedDecks.length > 0"
       toggleable
       v-model:collapsed="unratedCollapsed"
-      class="mt-6"
+      class="mt-6 min-w-0"
     >
       <template #header>
         <div class="flex-1 cursor-pointer select-none" @click="unratedCollapsed = !unratedCollapsed">
           <span class="font-bold">Rate completed ({{ unratedDecks.filter(d => d.id !== ratedUndoId).length }})</span>
         </div>
       </template>
-      <TransitionGroup name="unrated-list" tag="div" class="flex flex-col gap-3">
-        <div v-for="deck in unratedDecks" :key="deck.id" class="unrated-item border border-surface-200 dark:border-surface-700 rounded-lg p-3">
+      <TransitionGroup name="unrated-list" tag="div" class="flex flex-col gap-3 min-w-0">
+        <div v-for="deck in unratedDecks" :key="deck.id" class="unrated-item border border-surface-200 dark:border-surface-700 rounded-lg p-3 overflow-hidden min-w-0">
           <Transition name="unrated-swap" mode="out-in">
-            <div v-if="deck.id === ratedUndoId" key="undo" class="flex items-center justify-between h-16">
-              <span class="text-muted-color text-sm">Rated <strong>{{ deck.title }}</strong> as {{ ratedUndoLabel }}</span>
+            <div v-if="deck.id === ratedUndoId" key="undo" class="flex items-center justify-between gap-2 flex-wrap min-w-0">
+              <span class="text-muted-color text-sm min-w-0 break-words">Rated <strong>{{ deck.title }}</strong> as {{ ratedUndoLabel }}</span>
               <Button label="Undo" icon="pi pi-undo" size="small" text @click="undoRating" />
             </div>
-            <div v-else key="card" class="flex items-center gap-3">
-              <NuxtLink :to="`/decks/media/${deck.id}/detail`" class="shrink-0">
-                <img
-                  :src="deck.coverUrl || '/img/nocover.jpg'"
-                  :alt="deck.title"
-                  class="h-16 w-11 object-cover rounded"
-                />
-              </NuxtLink>
-              <div class="flex flex-col sm:flex-row sm:items-center gap-2 flex-1 min-w-0">
+            <div v-else key="card" class="flex flex-col gap-3 min-w-0">
+              <div class="flex items-center gap-3 min-w-0">
+                <NuxtLink :to="`/decks/media/${deck.id}/detail`" class="shrink-0 hidden sm:block">
+                  <img
+                    :src="deck.coverUrl || '/img/nocover.jpg'"
+                    :alt="deck.title"
+                    class="h-16 w-11 object-cover rounded"
+                  />
+                </NuxtLink>
                 <div class="flex items-center gap-2 min-w-0">
                   <NuxtLink :to="`/decks/media/${deck.id}/detail`" class="font-medium hover:text-primary-500 truncate">
                     {{ deck.title }}
                   </NuxtLink>
                   <Tag :value="getMediaTypeText(deck.mediaType)" severity="secondary" class="shrink-0" />
                 </div>
-                <DifficultyRating
-                  :deck-id="deck.id"
-                  class="sm:ml-auto shrink-0"
-                  @rated="(r: number) => onUnratedRated(deck.id, r)"
-                />
               </div>
+              <DifficultyRating
+                :deck-id="deck.id"
+                @rated="(r: number) => onUnratedRated(deck.id, r)"
+              />
             </div>
           </Transition>
         </div>
@@ -469,6 +468,10 @@ onMounted(async () => {
 </template>
 
 <style scoped>
+:deep(.p-panel-content-container) {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .card-swap-enter-active {
   transition: opacity 0.25s ease, transform 0.25s ease;
 }
