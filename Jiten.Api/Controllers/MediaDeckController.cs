@@ -1183,7 +1183,7 @@ public class MediaDeckController(
 
         var jmdictWordsDict = context.JMDictWords.AsNoTracking()
                                      .Where(w => uniqueWordIds.Contains(w.WordId))
-                                     .Include(w => w.Definitions)
+                                     .Include(w => w.Definitions.OrderBy(d => d.SenseIndex))
                                      .ToDictionary(w => w.WordId);
 
         var wordIdOrder = new Dictionary<int, int>(capacity: wordIds.Count);
@@ -1522,7 +1522,7 @@ public class MediaDeckController(
                                                      List<(int WordId, byte ReadingIndex, int Occurrences)> deckWords)
     {
         var jmdictWords = await context.JMDictWords.AsNoTracking()
-                                       .Include(w => w.Definitions)
+                                       .Include(w => w.Definitions.OrderBy(d => d.SenseIndex))
                                        .Where(w => wordIds.Contains(w.WordId))
                                        .ToDictionaryAsync(w => w.WordId);
         var intWordIds = wordIds.Select(wid => (int)wid).ToList();
@@ -1632,7 +1632,7 @@ public class MediaDeckController(
                             if (j != 0)
                                 definitionBuilder.Append(" ; ");
                             definitionBuilder.Append(System.Net.WebUtility.HtmlEncode(meaning));
-                            if (j == definitions.Count - 1)
+                            if (j == definition.EnglishMeanings.Count - 1)
                                 definitionBuilder.Append("</li>");
                         }
                     }

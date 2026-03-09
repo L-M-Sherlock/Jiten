@@ -144,7 +144,7 @@ public class WordSetController(
 
         var words = await jitenContext.JMDictWords
             .AsNoTracking()
-            .Include(w => w.Definitions)
+            .Include(w => w.Definitions.OrderBy(d => d.SenseIndex))
             .Where(w => pagedWordIds.Contains(w.WordId))
             .ToDictionaryAsync(w => w.WordId);
 

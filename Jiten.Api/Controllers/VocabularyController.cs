@@ -43,7 +43,7 @@ public class VocabularyController(JitenDbContext context, IDbContextFactory<Jite
         await using var ctx4 = await contextFactory.CreateDbContextAsync();
 
         var wordTask = ctx1.JMDictWords.AsNoTracking()
-                           .Include(w => w.Definitions)
+                           .Include(w => w.Definitions.OrderBy(d => d.SenseIndex))
                            .FirstOrDefaultAsync(w => w.WordId == wordId);
 
         var wordFormsTask = WordFormHelper.LoadWordFormsForWord(ctx2, wordId);
@@ -113,7 +113,7 @@ public class VocabularyController(JitenDbContext context, IDbContextFactory<Jite
         await using var ctx2 = await contextFactory.CreateDbContextAsync();
 
         var wordTask = context.JMDictWords.AsNoTracking()
-                              .Include(w => w.Definitions)
+                              .Include(w => w.Definitions.OrderBy(d => d.SenseIndex))
                               .FirstOrDefaultAsync(w => w.WordId == wordId);
 
         var wordFormsTask = WordFormHelper.LoadWordFormsForWord(ctx1, wordId);
@@ -580,7 +580,7 @@ public class VocabularyController(JitenDbContext context, IDbContextFactory<Jite
 
         var words = await context.JMDictWords
             .AsNoTracking()
-            .Include(w => w.Definitions)
+            .Include(w => w.Definitions.OrderBy(d => d.SenseIndex))
             .Where(w => wordIds.Contains(w.WordId))
             .ToListAsync();
 

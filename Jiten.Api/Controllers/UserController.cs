@@ -1479,7 +1479,7 @@ public class UserController(
         var jmdictWords = await jitenContext.JMDictWords
                                             .AsNoTracking()
                                             .Where(w => wordIds.Contains(w.WordId))
-                                            .Include(w => w.Definitions)
+                                            .Include(w => w.Definitions.OrderBy(d => d.SenseIndex))
                                             .ToListAsync();
 
         var jmdictLookup = jmdictWords.ToDictionary(w => w.WordId);
@@ -1851,7 +1851,7 @@ public class UserController(
         var jmdictWords = await jitenContext.JMDictWords
                                             .AsNoTracking()
                                             .Where(w => wordIds.Contains(w.WordId))
-                                            .Include(w => w.Definitions)
+                                            .Include(w => w.Definitions.OrderBy(d => d.SenseIndex))
                                             .ToListAsync();
 
         var jmdictLookup = jmdictWords.ToDictionary(w => w.WordId);
