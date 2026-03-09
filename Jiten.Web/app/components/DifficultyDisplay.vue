@@ -9,11 +9,13 @@
     difficultyRaw?: number;
     userAdjustment?: number;
     voteCount?: number;
+    useStars?: boolean;
   }>();
 
   const store = useJitenStore();
 
   const nameValues = ['Beginner', 'Easy', 'Average', 'Hard', 'Expert', 'Insane'];
+  const starValues = ['★☆☆☆☆', '★★☆☆☆', '★★★☆☆', '★★★★☆', '★★★★★', '★★★★★'];
 
   const colorClasses = [
     'text-green-700 dark:text-green-300',
@@ -41,6 +43,7 @@
 
   const difficultyText = computed(() => {
     const bucket = effectiveBucket.value;
+    if (props.useStars) return starValues[bucket];
     switch (store.difficultyDisplayStyle) {
       case DifficultyDisplayStyle.Name:
         return nameValues[bucket];
@@ -82,20 +85,25 @@
   const tooltip = computed(() => {
     const parts: string[] = [];
 
-    switch (store.difficultyDisplayStyle) {
-      case DifficultyDisplayStyle.Name:
-        parts.push(difficultyValue.value);
-        break;
-      case DifficultyDisplayStyle.Value:
-        parts.push(nameValues[effectiveBucket.value]);
-        break;
+    if (props.useStars) {
+      parts.push(`${nameValues[effectiveBucket.value]} (${difficultyValue.value})`);
+    } else {
+      switch (store.difficultyDisplayStyle) {
+        case DifficultyDisplayStyle.Name:
+          parts.push(difficultyValue.value);
+          break;
+        case DifficultyDisplayStyle.Value:
+          parts.push(nameValues[effectiveBucket.value]);
+          break;
+      }
     }
 
     if (hasAdjustment.value && props.difficultyRaw != null) {
       const adj = props.userAdjustment!;
       const sign = adj > 0 ? '+' : '';
       parts.push(`**Algorithmic:** ${rawValue.value} (${nameValues[rawBucket.value]})`);
-      parts.push(`**Community:** ${difficultyValue.value} (${nameValues[effectiveBucket.value]})  ${arrowIndicator.value} ${sign}${adj.toFixed(1)}`);
+      const adjDisplay = usePercentage.value ? `${(adj * 20).toFixed(0)}%` : adj.toFixed(1);
+      parts.push(`**Community:** ${difficultyValue.value} (${nameValues[effectiveBucket.value]})  ${arrowIndicator.value} ${sign}${adjDisplay}`);
       if (props.voteCount && props.voteCount > 0) {
         parts.push(`Based on ${props.voteCount} vote${props.voteCount !== 1 ? 's' : ''}`);
       }
@@ -116,7 +124,7 @@
 
 <template>
   <span :class="['tabular-nums font-bold', difficultyClass]">
-    <span v-if="arrowIndicator" :class="['text-xs mr-0.5', arrowClass]">{{ arrowIndicator }}</span>
+    <span v-if="arrowIndicator && !useStars" :class="['text-xs mr-0.5', arrowClass]">{{ arrowIndicator }}</span>
     {{ difficultyText }}
     <span v-if="voteCount && voteCount >= 3" class="text-xs font-normal text-muted-color ml-1"></span>
   </span>
