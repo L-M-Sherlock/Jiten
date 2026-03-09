@@ -172,6 +172,14 @@ public partial class MorphologicalAnalyser
             if (word is { Text: "隙", Reading: "ヒマ" })
                 word.Reading = "スキ";
 
+            // 弄* (イラ*) → イジ* — いらう is archaic; modern 弄る is always いじる
+            if (word.DictionaryForm == "弄う")
+            {
+                word.DictionaryForm = "弄る";
+                word.NormalizedForm = "弄る";
+                word.Reading = word.Reading!.Replace("イラ", "イジ");
+            }
+
             // 角 (カド) — Sudachi always gives カド but standalone 角 has three common readings:
             //   かど (corner): 角を曲がる, 建物の角
             //   つの (horn):   鬼の角, 角が生えている
@@ -224,6 +232,15 @@ public partial class MorphologicalAnalyser
                 if (!isAmountExpression)
                     word.Reading = "ヒタイ";
             }
+
+            // 様 disambiguation: さま (honorific suffix, 1545790) vs よう (appearance/manner, 1605840)
+            // Sudachi reading reliably distinguishes: サマ → honorific, ヨウ → manner
+            if (word is { Text: "様", Reading: "サマ" })
+                word.PreMatchedWordId = 1545790;
+
+            // Kana よう as 形状詞/助動詞語幹 → 様/manner (1605840), not 陽/positive (1605845)
+            if (word is { Text: "よう", Reading: "ヨウ", DictionaryForm: "よう" })
+                word.PreMatchedWordId = 1605840;
 
             // 事 (ジ) → コト when Sudachi misclassified as suffix after verb/expression
             // ジ reading only occurs in kango compounds (仕事, 用事, 無事); those are parsed as single tokens.
