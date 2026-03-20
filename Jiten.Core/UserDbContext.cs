@@ -37,6 +37,7 @@ public class UserDbContext : IdentityDbContext<User>
     public DbSet<UserKanjiGrid> UserKanjiGrids { get; set; }
 
     public DbSet<UserWordSetState> UserWordSetStates { get; set; }
+    public DbSet<UserStudyDeck> UserStudyDecks { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -102,6 +103,11 @@ public class UserDbContext : IdentityDbContext<User>
             if (isNpgsql)
                 entity.Property(uc => uc.UserId).HasConversion(guidToString).HasColumnType("uuid").IsRequired();
 
+            entity.HasOne<User>()
+                  .WithMany()
+                  .HasForeignKey(uc => uc.UserId)
+                  .OnDelete(DeleteBehavior.Cascade);
+
             entity.HasIndex(uc => uc.UserId).HasDatabaseName("IX_UserCoverage_UserId");
         });
 
@@ -115,6 +121,12 @@ public class UserDbContext : IdentityDbContext<User>
             }
             entity.Property(uc => uc.Metric).HasColumnType("smallint").IsRequired();
             entity.Property(uc => uc.ComputedAt).IsRequired();
+
+            entity.HasOne<User>()
+                  .WithMany()
+                  .HasForeignKey(uc => uc.UserId)
+                  .OnDelete(DeleteBehavior.Cascade);
+
             entity.HasIndex(uc => uc.UserId).HasDatabaseName("IX_UserCoverageChunks_UserId");
         });
 
@@ -125,6 +137,11 @@ public class UserDbContext : IdentityDbContext<User>
             entity.Property(uk => uk.KnownState).IsRequired();
             if (isNpgsql)
                 entity.Property(uk => uk.UserId).HasConversion(guidToString).HasColumnType("uuid").IsRequired();
+
+            entity.HasOne<User>()
+                  .WithMany()
+                  .HasForeignKey(uk => uk.UserId)
+                  .OnDelete(DeleteBehavior.Cascade);
 
             entity.HasIndex(uk => uk.UserId).HasDatabaseName("IX_UserKnownWord_UserId");
         });
@@ -196,6 +213,13 @@ public class UserDbContext : IdentityDbContext<User>
                 entity.Property(c => c.UserId).HasConversion(guidToString).HasColumnType("uuid").IsRequired();
             entity.HasIndex(c => new { c.UserId, c.WordId, c.ReadingIndex }).IsUnique();
             entity.HasIndex(c => c.UserId);
+            entity.HasIndex(c => new { c.UserId, c.State, c.Due }).HasDatabaseName("IX_FsrsCard_UserId_State_Due");
+            entity.Property(c => c.CreatedAt).HasDefaultValueSql(isNpgsql ? "now() at time zone 'utc'" : "datetime('now')");
+
+            entity.HasOne<User>()
+                  .WithMany()
+                  .HasForeignKey(c => c.UserId)
+                  .OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<FsrsReviewLog>(entity =>
@@ -273,11 +297,34 @@ public class UserDbContext : IdentityDbContext<User>
                 entity.Property(ufs => ufs.ParametersJson).IsRequired();
             }
             entity.Property(ufs => ufs.DesiredRetention).HasColumnType("double precision");
+            if (isNpgsql)
+            {
+                entity.Property(ufs => ufs.SettingsJson).HasColumnType("jsonb").HasDefaultValue("{}");
+            }
+            else
+            {
+                entity.Property(ufs => ufs.SettingsJson).HasDefaultValue("{}");
+            }
             entity.Ignore(ufs => ufs.Parameters);
 
             entity.HasOne<User>()
                   .WithOne()
                   .HasForeignKey<UserFsrsSettings>(ufs => ufs.UserId)
+                  .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<UserStudyDeck>(entity =>
+        {
+            entity.HasKey(usd => usd.UserStudyDeckId);
+            if (isNpgsql)
+                entity.Property(usd => usd.UserId).HasConversion(guidToString).HasColumnType("uuid").IsRequired();
+            entity.HasIndex(usd => new { usd.UserId, usd.DeckId }).IsUnique();
+            entity.HasIndex(usd => usd.UserId).HasDatabaseName("IX_UserStudyDeck_UserId");
+            entity.Property(usd => usd.CreatedAt).IsRequired();
+
+            entity.HasOne<User>()
+                  .WithMany()
+                  .HasForeignKey(usd => usd.UserId)
                   .OnDelete(DeleteBehavior.Cascade);
         });
 
@@ -287,6 +334,12 @@ public class UserDbContext : IdentityDbContext<User>
             if (isNpgsql)
                 entity.Property(uwss => uwss.UserId).HasConversion(guidToString).HasColumnType("uuid").IsRequired();
             entity.Property(uwss => uwss.CreatedAt).IsRequired();
+
+            entity.HasOne<User>()
+                  .WithMany()
+                  .HasForeignKey(uwss => uwss.UserId)
+                  .OnDelete(DeleteBehavior.Cascade);
+
             entity.HasIndex(uwss => uwss.UserId).HasDatabaseName("IX_UserWordSetState_UserId");
         });
 

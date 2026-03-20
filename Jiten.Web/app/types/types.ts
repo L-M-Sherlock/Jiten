@@ -361,6 +361,7 @@ export interface FsrsCardWithWordDto {
   wordText: string;
   readingType: ReadingType;
   frequencyRank: number;
+  wordTextPlain?: string;
 }
 
 export interface FsrsImportResultDto {
@@ -700,4 +701,197 @@ export interface BlacklistedDeckDto {
   coverUrl: string | null
   mediaType: MediaType
   createdAt: string
+}
+
+// SRS Study types
+export interface StudyDeckDto {
+  userStudyDeckId: number;
+  deckId: number;
+  title: string;
+  romajiTitle?: string;
+  englishTitle?: string;
+  coverName?: string;
+  mediaType: MediaType;
+  sortOrder: number;
+  downloadType: number;
+  order: number;
+  minFrequency: number;
+  maxFrequency: number;
+  targetPercentage?: number;
+  minOccurrences?: number;
+  maxOccurrences?: number;
+  excludeKana: boolean;
+  excludeMatureMasteredBlacklisted: boolean;
+  excludeAllTrackedWords: boolean;
+  totalWords: number;
+  unseenCount: number;
+  learningCount: number;
+  reviewCount: number;
+  masteredCount: number;
+  blacklistedCount: number;
+  suspendedCount: number;
+  dueReviewCount: number;
+}
+
+export interface StudyBatchResponse {
+  sessionId: string;
+  cards: StudyCardDto[];
+  newCardsRemaining: number;
+  reviewsRemaining: number;
+  newCardsToday: number;
+  reviewsToday: number;
+}
+
+export interface StudyCardDto {
+  cardId: number;
+  wordId: number;
+  readingIndex: number;
+  state: number;
+  isNewCard: boolean;
+  wordText: string;
+  wordTextPlain: string;
+  readings: StudyReadingDto[];
+  definitions: StudyDefinitionDto[];
+  partsOfSpeech: string[];
+  pitchAccents?: number[];
+  frequencyRank: number;
+  exampleSentence?: StudyExampleSentenceDto;
+  intervalPreview?: IntervalPreviewDto;
+  deckOccurrences?: StudyDeckOccurrenceDto[];
+}
+
+export interface StudyDeckOccurrenceDto {
+  deckId: number;
+  originalTitle: string;
+  romajiTitle?: string;
+  englishTitle?: string;
+  occurrences: number;
+}
+
+export interface IntervalPreviewDto {
+  againSeconds: number;
+  hardSeconds: number;
+  goodSeconds: number;
+  easySeconds: number;
+}
+
+export interface StudyReadingDto {
+  text: string;
+  rubyText: string;
+  readingIndex: number;
+  formType: number;
+}
+
+export interface StudyDefinitionDto {
+  index: number;
+  meanings: string[];
+  partsOfSpeech: string[];
+}
+
+export interface StudyExampleSentenceDto {
+  text: string;
+  wordPosition: number;
+  wordLength: number;
+  sourceDeck?: StudyExampleSourceDto;
+  sourceParent?: StudyExampleSourceDto;
+}
+
+export interface StudyExampleSourceDto {
+  deckId: number;
+  originalTitle: string;
+  romajiTitle?: string;
+  englishTitle?: string;
+  mediaType: MediaType;
+}
+
+export type StudyInterleaving = 'Mixed' | 'NewFirst' | 'ReviewsFirst';
+export type StudyNewCardOrder = 'DeckFrequency' | 'GlobalFrequency' | 'Random';
+export type StudyReviewFrom = 'AllTracked' | 'StudyDecksOnly';
+export type ExampleSentencePosition = 'Hidden' | 'Back' | 'Front';
+
+export interface StudySettingsDto {
+  newCardsPerDay: number;
+  maxReviewsPerDay: number;
+  gradingButtons: number;
+  interleaving: StudyInterleaving;
+  newCardOrder: StudyNewCardOrder;
+  reviewFrom: StudyReviewFrom;
+  showPitchAccent: boolean;
+  exampleSentencePosition: ExampleSentencePosition;
+  showFrequencyRank: boolean;
+  showKanjiBreakdown: boolean;
+  showNextInterval: boolean;
+  showKeybinds: boolean;
+  showElapsedTime: boolean;
+}
+
+export interface DueSummaryDto {
+  reviewsDue: number;
+  newCardsAvailable: number;
+  reviewsToday: number;
+  reviewBudgetLeft: number;
+  nextReviewAt: string | null;
+}
+
+export interface ReviewForecastDto {
+  dueWithinHour: number;
+  dueToday: number;
+  dueTomorrow: number;
+  nextReviewAt: string | null;
+}
+
+export interface SessionStreakDto {
+  currentStreak: number;
+  longestStreak: number;
+  isNewRecord: boolean;
+}
+
+export interface DeckStreakDto {
+  currentStreak: number;
+  longestStreak: number;
+  isNewRecord: boolean;
+  totalReviewDays: number;
+  recentDays: { date: string; count: number }[];
+}
+
+export interface StudyHeatmapResponse {
+  year: number;
+  days: HeatmapDay[];
+  currentStreak: number;
+  longestStreak: number;
+  totalReviewDays: number;
+  totalReviews: number;
+}
+
+export interface HeatmapDay {
+  date: string;
+  reviewCount: number;
+  correctCount: number;
+}
+
+export interface AddStudyDeckRequest {
+  deckId: number;
+  downloadType: number;
+  order: number;
+  minFrequency: number;
+  maxFrequency: number;
+  targetPercentage?: number;
+  minOccurrences?: number;
+  maxOccurrences?: number;
+  excludeKana: boolean;
+  excludeMatureMasteredBlacklisted: boolean;
+  excludeAllTrackedWords: boolean;
+}
+
+export interface UpdateStudyDeckRequest {
+  downloadType: number;
+  order: number;
+  minFrequency: number;
+  maxFrequency: number;
+  targetPercentage?: number;
+  minOccurrences?: number;
+  maxOccurrences?: number;
+  excludeKana: boolean;
+  excludeMatureMasteredBlacklisted: boolean;
+  excludeAllTrackedWords: boolean;
 }

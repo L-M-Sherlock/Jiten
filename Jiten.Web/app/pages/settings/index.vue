@@ -2,7 +2,6 @@
   import SettingsCoverage from '~/components/SettingsCoverage.vue';
   import SettingsApiKey from '~/components/SettingsApiKey.vue';
   import SettingsWordSets from '~/components/SettingsWordSets.vue';
-  import SettingsFsrsParameters from '~/components/SettingsFsrsParameters.vue';
 
   definePageMeta({
     middleware: ['auth'],
@@ -53,7 +52,19 @@
 
     <SettingsWordSets class="mb-4" />
 
-    <SettingsFsrsParameters class="mb-4" />
+    <Card class="mb-4">
+      <template #title>
+        <h3 class="text-lg font-semibold">SRS</h3>
+      </template>
+      <template #content>
+        <p class="text-gray-600 dark:text-gray-300 mb-3">
+          Configure your SRS study preferences, daily limits, card display options, and FSRS scheduling parameters.
+        </p>
+        <NuxtLink to="/settings/srs">
+          <Button icon="pi pi-cog" label="SRS Settings" class="w-full md:w-auto" />
+        </NuxtLink>
+      </template>
+    </Card>
 
     <SettingsApiKey />
   </div>

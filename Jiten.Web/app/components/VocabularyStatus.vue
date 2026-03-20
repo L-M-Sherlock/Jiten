@@ -25,17 +25,32 @@
   const wordPath = computed(() => `${props.word.wordId}/${props.word.mainReading.readingIndex}`);
 
   const isBlacklisted = computed(() => knownStates.value.includes(KnownState.Blacklisted));
+  const isRedundant = computed(() => knownStates.value.includes(KnownState.Redundant));
+
+  const redundantTierLabel = computed(() => {
+    if (knownStates.value.includes(KnownState.Mastered)) return 'Mastered';
+    if (knownStates.value.includes(KnownState.Mature)) return 'Mature';
+    if (knownStates.value.includes(KnownState.Young)) return 'Young';
+    if (knownStates.value.includes(KnownState.Blacklisted)) return 'Blacklisted';
+    return '';
+  });
 
   const masterWord = async () => {
     op.value?.hide();
-    await $api<boolean>(`user/vocabulary/add/${wordPath.value}`, { method: 'POST' });
-    knownStates.value = [KnownState.Mastered];
+    try {
+      await $api<boolean>(`user/vocabulary/add/${wordPath.value}`, { method: 'POST' });
+      knownStates.value = [KnownState.Mastered];
+    }
+    catch { /* state unchanged on failure */ }
   };
 
   const blacklistWord = async () => {
     op.value?.hide();
-    await $api<boolean>(`user/vocabulary/blacklist/${wordPath.value}`, { method: 'POST' });
-    knownStates.value = [KnownState.Blacklisted];
+    try {
+      await $api<boolean>(`user/vocabulary/blacklist/${wordPath.value}`, { method: 'POST' });
+      knownStates.value = [KnownState.Blacklisted];
+    }
+    catch { /* state unchanged on failure */ }
   };
 
   const onPlusClick = (e: MouseEvent) => {
@@ -45,8 +60,11 @@
   };
 
   const removeWord = async () => {
-    await $api<boolean>(`user/vocabulary/remove/${wordPath.value}`, { method: 'POST' });
-    knownStates.value = [KnownState.New];
+    try {
+      await $api<boolean>(`user/vocabulary/remove/${wordPath.value}`, { method: 'POST' });
+      knownStates.value = [KnownState.New];
+    }
+    catch { /* state unchanged on failure */ }
   };
 </script>
 
@@ -54,7 +72,13 @@
   <ClientOnly>
     <span class="inline-flex items-center gap-1">
       <template v-if="auth.isAuthenticated">
-        <template v-if="knownStates.includes(KnownState.Mature)">
+        <template v-if="isRedundant">
+          <Tooltip :content="`Known via kanji form (${redundantTierLabel})`">
+            <span class="text-blue-500 dark:text-blue-300 cursor-default">Redundant</span>
+          </Tooltip>
+          <span aria-hidden="true">|</span>
+        </template>
+        <template v-else-if="knownStates.includes(KnownState.Mature)">
           <span class="text-green-600 dark:text-green-300">Mature</span>
           <Button icon="pi pi-minus" size="small" text severity="danger" @click="removeWord" />
           <span aria-hidden="true">|</span>

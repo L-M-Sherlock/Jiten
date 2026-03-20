@@ -21,6 +21,7 @@
   }>();
 
   const showDownloadDialog = ref(false);
+  const showStudyDeckDialog = ref(false);
   const showIssueDialog = ref(false);
   const isDescriptionExpanded = ref(false);
   const showIgnoreOverlay = ref(false);
@@ -499,6 +500,15 @@
                         @click="showDownloadDialog = true"
                       />
                     </Tooltip>
+                    <Tooltip v-if="authStore.isAuthenticated" content="Study with SRS">
+                      <Button
+                        :label="isCompact ? undefined : 'Study'"
+                        class="text-center"
+                        icon="pi pi-play"
+                        severity="success"
+                        @click="showStudyDeckDialog = true"
+                      />
+                    </Tooltip>
                     <Button
                       v-if="!isCompact && authStore.isAdmin && displayAdminFunctions"
                       as="router-link"
@@ -524,6 +534,7 @@
     </Card>
 
     <MediaDeckDownloadDialog :deck="deck" :visible="showDownloadDialog" @update:visible="showDownloadDialog = $event" />
+    <SrsAddDeckDialog :visible="showStudyDeckDialog" :preselected-deck="deck" @update:visible="showStudyDeckDialog = $event" />
     <ReportIssueDialog :visible="showIssueDialog" @update:visible="showIssueDialog = $event" :deck="deck" />
 
     <TieredMenu ref="menu" :model="menuItems" popup />

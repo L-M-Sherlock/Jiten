@@ -190,6 +190,11 @@ namespace Jiten.Core.Migrations.UserDb
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("CardId"));
 
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasDefaultValueSql("now() at time zone 'utc'");
+
                     b.Property<double?>("Difficulty")
                         .HasColumnType("double precision");
 
@@ -220,6 +225,9 @@ namespace Jiten.Core.Migrations.UserDb
                     b.HasKey("CardId");
 
                     b.HasIndex("UserId");
+
+                    b.HasIndex("UserId", "State", "Due")
+                        .HasDatabaseName("IX_FsrsCard_UserId_State_Due");
 
                     b.HasIndex("UserId", "WordId", "ReadingIndex")
                         .IsUnique();
@@ -253,6 +261,90 @@ namespace Jiten.Core.Migrations.UserDb
                         .IsUnique();
 
                     b.ToTable("FsrsReviewLogs", "user");
+                });
+
+            modelBuilder.Entity("Jiten.Core.Data.User.UserFsrsSettings", b =>
+                {
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<double?>("DesiredRetention")
+                        .HasColumnType("double precision");
+
+                    b.Property<string>("ParametersJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<string>("SettingsJson")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("jsonb")
+                        .HasDefaultValue("{}");
+
+                    b.HasKey("UserId");
+
+                    b.ToTable("UserFsrsSettings", "user");
+                });
+
+            modelBuilder.Entity("Jiten.Core.Data.User.UserStudyDeck", b =>
+                {
+                    b.Property<int>("UserStudyDeckId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("UserStudyDeckId"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("DeckId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("DownloadType")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("ExcludeAllTrackedWords")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("ExcludeKana")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("ExcludeMatureMasteredBlacklisted")
+                        .HasColumnType("boolean");
+
+                    b.Property<int>("MaxFrequency")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("MaxOccurrences")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("MinFrequency")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("MinOccurrences")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("Order")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("integer");
+
+                    b.Property<float?>("TargetPercentage")
+                        .HasColumnType("real");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("UserStudyDeckId");
+
+                    b.HasIndex("UserId")
+                        .HasDatabaseName("IX_UserStudyDeck_UserId");
+
+                    b.HasIndex("UserId", "DeckId")
+                        .IsUnique();
+
+                    b.ToTable("UserStudyDecks", "user");
                 });
 
             modelBuilder.Entity("Jiten.Core.Data.UserAccomplishment", b =>
@@ -384,23 +476,6 @@ namespace Jiten.Core.Migrations.UserDb
                         .HasDatabaseName("IX_UserDeckPreference_UserId_Status");
 
                     b.ToTable("UserDeckPreferences", "user");
-                });
-
-            modelBuilder.Entity("Jiten.Core.Data.User.UserFsrsSettings", b =>
-                {
-                    b.Property<Guid>("UserId")
-                        .HasColumnType("uuid");
-
-                    b.Property<double?>("DesiredRetention")
-                        .HasColumnType("double precision");
-
-                    b.Property<string>("ParametersJson")
-                        .IsRequired()
-                        .HasColumnType("jsonb");
-
-                    b.HasKey("UserId");
-
-                    b.ToTable("UserFsrsSettings", "user");
                 });
 
             modelBuilder.Entity("Jiten.Core.Data.UserKanjiGrid", b =>
@@ -653,6 +728,15 @@ namespace Jiten.Core.Migrations.UserDb
                     b.Navigation("User");
                 });
 
+            modelBuilder.Entity("Jiten.Core.Data.FSRS.FsrsCard", b =>
+                {
+                    b.HasOne("Jiten.Core.Data.Authentication.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Jiten.Core.Data.FSRS.FsrsReviewLog", b =>
                 {
                     b.HasOne("Jiten.Core.Data.FSRS.FsrsCard", "Card")
@@ -664,7 +748,43 @@ namespace Jiten.Core.Migrations.UserDb
                     b.Navigation("Card");
                 });
 
+            modelBuilder.Entity("Jiten.Core.Data.User.UserFsrsSettings", b =>
+                {
+                    b.HasOne("Jiten.Core.Data.Authentication.User", null)
+                        .WithOne()
+                        .HasForeignKey("Jiten.Core.Data.User.UserFsrsSettings", "UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Jiten.Core.Data.User.UserStudyDeck", b =>
+                {
+                    b.HasOne("Jiten.Core.Data.Authentication.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Jiten.Core.Data.UserAccomplishment", b =>
+                {
+                    b.HasOne("Jiten.Core.Data.Authentication.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Jiten.Core.Data.UserCoverage", b =>
+                {
+                    b.HasOne("Jiten.Core.Data.Authentication.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Jiten.Core.Data.UserCoverageChunk", b =>
                 {
                     b.HasOne("Jiten.Core.Data.Authentication.User", null)
                         .WithMany()
@@ -682,20 +802,20 @@ namespace Jiten.Core.Migrations.UserDb
                         .IsRequired();
                 });
 
-            modelBuilder.Entity("Jiten.Core.Data.User.UserFsrsSettings", b =>
-                {
-                    b.HasOne("Jiten.Core.Data.Authentication.User", null)
-                        .WithOne()
-                        .HasForeignKey("Jiten.Core.Data.User.UserFsrsSettings", "UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-                });
-
             modelBuilder.Entity("Jiten.Core.Data.UserKanjiGrid", b =>
                 {
                     b.HasOne("Jiten.Core.Data.Authentication.User", null)
                         .WithOne()
                         .HasForeignKey("Jiten.Core.Data.UserKanjiGrid", "UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Jiten.Core.Data.UserKnownWord", b =>
+                {
+                    b.HasOne("Jiten.Core.Data.Authentication.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });
@@ -714,6 +834,15 @@ namespace Jiten.Core.Migrations.UserDb
                     b.HasOne("Jiten.Core.Data.Authentication.User", null)
                         .WithOne()
                         .HasForeignKey("Jiten.Core.Data.UserProfile", "UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Jiten.Core.Data.UserWordSetState", b =>
+                {
+                    b.HasOne("Jiten.Core.Data.Authentication.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });

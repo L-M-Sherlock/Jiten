@@ -12,6 +12,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using StackExchange.Redis;
+using Swashbuckle.AspNetCore.Annotations;
 using System.Text;
 using System.Text.Json;
 using WanaKanaShaapu;
@@ -28,7 +29,7 @@ public class UserController(
     IDbContextFactory<JitenDbContext> contextFactory,
     UserDbContext userContext,
     IBackgroundJobClient backgroundJobs,
-    ISrsService srsService,
+    IWordFormSiblingCache wordFormCache,
     IConfiguration configuration,
     IConnectionMultiplexer redis,
     ILogger<UserController> logger) : ControllerBase
@@ -58,6 +59,28 @@ public class UserController(
             effectiveForms[(c.WordId, c.ReadingIndex)] =
                 ComputeEffectiveCategory(c.State, c.Due, c.LastReview, now) ?? KnownState.New;
         }
+
+        // Expand kanji-kana redundancy: count kana forms covered by known kanji forms
+        int redundantForms = 0;
+        var redundantExpansions = new Dictionary<(int, int), KnownState>();
+        foreach (var kvp in effectiveForms)
+        {
+            if (kvp.Value == KnownState.New) continue;
+            var kanaIndexes = wordFormCache.GetKanaIndexesForKanji(kvp.Key.WordId, (byte)kvp.Key.ReadingIndex);
+            if (kanaIndexes == null) continue;
+            foreach (var kanaIdx in kanaIndexes)
+            {
+                var kanaKey = (kvp.Key.WordId, (int)kanaIdx);
+                if (effectiveForms.ContainsKey(kanaKey)) continue;
+
+                if (!redundantExpansions.TryGetValue(kanaKey, out var existing) ||
+                    StateRank(kvp.Value) > StateRank(existing))
+                    redundantExpansions[kanaKey] = kvp.Value;
+            }
+        }
+        redundantForms = redundantExpansions.Count;
+        foreach (var (key, state) in redundantExpansions)
+            effectiveForms.TryAdd(key, state);
 
         // Count FSRS-only forms and words
         int youngForms = 0, matureForms = 0, masteredForms = 0, blacklistedForms = 0;
@@ -159,7 +182,8 @@ public class UserController(
                               WordSetMastered = wsMasteredWordIds.Count,
                               WordSetMasteredForm = wsMasteredForms,
                               WordSetBlacklisted = wsBlacklistedWordIds.Count,
-                              WordSetBlacklistedForm = wsBlacklistedForms
+                              WordSetBlacklistedForm = wsBlacklistedForms,
+                              RedundantForms = redundantForms
                           });
     }
 
@@ -585,32 +609,6 @@ public class UserController(
 
             await userContext.SaveChangesAsync();
 
-            // Sync kana readings for imported/updated kanji cards
-            var cardsToSync = new Dictionary<int, (int WordId, byte ReadingIndex, FsrsCard SourceCard, bool Overwrite)>();
-
-            // Process newly added cards
-            foreach (var card in cardsToAdd)
-            {
-                if (!cardsToSync.ContainsKey(card.WordId))
-                {
-                    cardsToSync[card.WordId] = (card.WordId, card.ReadingIndex, card, request.Overwrite);
-                }
-            }
-
-            // Process updated cards
-            foreach (var card in cardsToUpdate)
-            {
-                if (!cardsToSync.ContainsKey(card.WordId))
-                {
-                    cardsToSync[card.WordId] = (card.WordId, card.ReadingIndex, card, request.Overwrite);
-                }
-            }
-
-            if (cardsToSync.Count > 0)
-            {
-                await srsService.SyncKanaReadingBatch(userId, cardsToSync.Values, DateTime.UtcNow);
-            }
-
             await transaction.CommitAsync();
 
             await CoverageDirtyHelper.MarkCoverageDirty(userContext, userId);
@@ -720,23 +718,10 @@ public class UserController(
                                       state: FsrsState.Mastered));
         }
 
-        var kanaSyncCount = 0;
         if (toInsert.Count > 0)
         {
             await userContext.FsrsCards.AddRangeAsync(toInsert);
             await userContext.SaveChangesAsync();
-
-            // Sync kana readings for imported kanji cards
-            var cardsToSync = toInsert
-                .GroupBy(c => c.WordId)
-                .Select(g => g.First())
-                .Select(c => (c.WordId, c.ReadingIndex, c, false))
-                .ToList();
-
-            if (cardsToSync.Count > 0)
-            {
-                kanaSyncCount = await srsService.SyncKanaReadingBatch(userId, cardsToSync, DateTime.UtcNow);
-            }
         }
 
         await CoverageDirtyHelper.MarkCoverageDirty(userContext, userId);
@@ -744,10 +729,9 @@ public class UserController(
         backgroundJobs.Enqueue<ComputationJob>(job => job.ComputeUserCoverage(userId));
 
         var uniqueWords = toInsert.Select(c => c.WordId).Distinct().Count();
-        var totalForms = toInsert.Count + kanaSyncCount;
         logger.LogInformation("User imported words from frequency range: UserId={UserId}, MinFreq={MinFrequency}, MaxFreq={MaxFrequency}, WordCount={WordCount}, FormCount={FormCount}",
-                              userId, minFrequency, maxFrequency, uniqueWords, totalForms);
-        return Results.Ok(new { words = uniqueWords, forms = totalForms });
+                              userId, minFrequency, maxFrequency, uniqueWords, toInsert.Count);
+        return Results.Ok(new { words = uniqueWords, forms = toInsert.Count });
     }
 
 
@@ -1982,6 +1966,134 @@ public class UserController(
 
     #endregion
 
+    #region Study Heatmap
+
+    [HttpGet("profile/{username}/study-heatmap")]
+    [AllowAnonymous]
+    [SwaggerOperation(Summary = "Get study activity heatmap and streak for a user profile")]
+    public async Task<IResult> GetStudyHeatmapByUsername(string username, [FromQuery] int? year = null)
+    {
+        var user = await userContext.Users
+                                    .AsNoTracking()
+                                    .FirstOrDefaultAsync(u => u.NormalizedUserName == username.ToUpperInvariant());
+
+        if (user == null)
+            return Results.NotFound(new { message = "Profile not found" });
+
+        var targetUserId = user.Id;
+        var currentUserId = userService.UserId;
+        var isOwnProfile = currentUserId == targetUserId;
+
+        if (!isOwnProfile)
+        {
+            var profile = await userContext.UserProfiles
+                                           .AsNoTracking()
+                                           .FirstOrDefaultAsync(p => p.UserId == targetUserId);
+
+            if (profile is not { IsPublic: true })
+                return Results.NotFound(new { message = "Profile not found" });
+        }
+
+        var targetYear = year ?? DateTime.UtcNow.Year;
+        var yearStart = new DateTime(targetYear, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        var yearEnd = new DateTime(targetYear + 1, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+
+        var dailyStats = await userContext.FsrsReviewLogs
+            .AsNoTracking()
+            .Where(rl => rl.Card.UserId == targetUserId
+                         && rl.ReviewDateTime >= yearStart
+                         && rl.ReviewDateTime < yearEnd)
+            .GroupBy(rl => rl.ReviewDateTime.Date)
+            .Select(g => new
+            {
+                Date = g.Key,
+                ReviewCount = g.Count(),
+                CorrectCount = g.Count(rl => rl.Rating != FsrsRating.Again)
+            })
+            .OrderBy(g => g.Date)
+            .ToListAsync();
+
+        var days = dailyStats.Select(d => new HeatmapDayDto
+        {
+            Date = DateOnly.FromDateTime(d.Date),
+            ReviewCount = d.ReviewCount,
+            CorrectCount = d.CorrectCount
+        }).ToList();
+
+        // Compute streaks from all-time distinct review dates
+        var allReviewDates = await userContext.FsrsReviewLogs
+            .AsNoTracking()
+            .Where(rl => rl.Card.UserId == targetUserId)
+            .Select(rl => rl.ReviewDateTime.Date)
+            .Distinct()
+            .OrderByDescending(d => d)
+            .ToListAsync();
+
+        var today = DateTime.UtcNow.Date;
+        var (currentStreak, longestStreak) = ComputeStreaks(allReviewDates, today);
+
+        return Results.Ok(new StudyHeatmapResponse
+        {
+            Year = targetYear,
+            Days = days,
+            CurrentStreak = currentStreak,
+            LongestStreak = longestStreak,
+            TotalReviewDays = allReviewDates.Count,
+            TotalReviews = days.Sum(d => d.ReviewCount)
+        });
+    }
+
+    private static (int currentStreak, int longestStreak) ComputeStreaks(List<DateTime> sortedDatesDesc, DateTime today)
+    {
+        if (sortedDatesDesc.Count == 0)
+            return (0, 0);
+
+        // Current streak: count consecutive days from today/yesterday backwards
+        var currentStreak = 0;
+        var checkDate = today;
+
+        // Allow grace period — if no review today, start from yesterday
+        if (sortedDatesDesc[0].Date != today)
+        {
+            if (sortedDatesDesc[0].Date == today.AddDays(-1))
+                checkDate = today.AddDays(-1);
+            else
+                goto longestOnly;
+        }
+
+        foreach (var date in sortedDatesDesc)
+        {
+            if (date.Date == checkDate)
+            {
+                currentStreak++;
+                checkDate = checkDate.AddDays(-1);
+            }
+            else if (date.Date < checkDate)
+                break;
+        }
+
+        longestOnly:
+
+        // Longest streak: walk all dates
+        var longest = 0;
+        var streak = 1;
+        for (var i = 1; i < sortedDatesDesc.Count; i++)
+        {
+            if (sortedDatesDesc[i - 1].Date.AddDays(-1) == sortedDatesDesc[i].Date)
+                streak++;
+            else
+            {
+                longest = Math.Max(longest, streak);
+                streak = 1;
+            }
+        }
+        longest = Math.Max(longest, streak);
+
+        return (currentStreak, Math.Max(longest, currentStreak));
+    }
+
+    #endregion
+
     #region Kanji Grid
 
     /// <summary>
@@ -2068,13 +2180,21 @@ public class UserController(
     private record CachedKanjiInfo(string Character, int? FrequencyRank, short? JlptLevel);
     private record ReadingFrequencyResult(int WordId, short ReadingIndex, int FrequencyRank);
 
+    private static int StateRank(KnownState s) => s switch
+    {
+        KnownState.Mastered => 4,
+        KnownState.Blacklisted => 3,
+        KnownState.Mature => 2,
+        KnownState.Young => 1,
+        _ => 0
+    };
+
     private static KnownState? ComputeEffectiveCategory(FsrsState state, DateTime due, DateTime? lastReview, DateTime now)
     {
         switch (state)
         {
             case FsrsState.Mastered: return KnownState.Mastered;
             case FsrsState.Blacklisted: return KnownState.Blacklisted;
-            case FsrsState.New: return null;
         }
 
         if (lastReview == null)

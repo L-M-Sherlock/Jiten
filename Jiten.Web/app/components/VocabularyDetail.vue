@@ -39,7 +39,8 @@
 
   const { data: response, refresh: refreshInfo } = useApiFetch<Word>(infoUrl, { watch: false });
   const { data: mediaFrequency, status: mediaFreqStatus, refresh: refreshMediaFrequency } = useApiFetch<Record<string, number>>(mediaFreqUrl, { lazy: true, watch: false });
-  const { data: knownStates, refresh: refreshKnownStates } = useApiFetch<KnownState[]>(knownStateUrl, { lazy: true, watch: false });
+  const { data: fetchedKnownStates, refresh: refreshKnownStates } = useApiFetch<KnownState[]>(knownStateUrl, { lazy: true, watch: false });
+  const knownStatesOverride = computed(() => fetchedKnownStates.value ?? response.value?.knownStates ?? undefined);
 
   const { resolvedGroups } = useDictionaryDefinitions(
     computed(() => response.value?.mainReading?.text),
@@ -78,6 +79,7 @@
 
   const switchReadingOrWord = async () => {
     isTransitioning.value = true;
+    fetchedKnownStates.value = null;
     await refreshInfo();
     isTransitioning.value = false;
 
@@ -172,7 +174,7 @@
             </div>
             <div class="flex flex-col md:flex-row items-end md:hidden">
               <div class="text-gray-500 dark:text-gray-300 text-right">Rank #{{ response.mainReading.frequencyRank.toLocaleString() }}</div>
-              <VocabularyStatus :word="response" :known-states-override="knownStates ?? undefined" />
+              <VocabularyStatus :word="response" :known-states-override="knownStatesOverride" />
             </div>
           </div>
 
@@ -220,7 +222,7 @@
 
         <div class="md:min-w-64">
           <div class="text-gray-500 dark:text-gray-300 text-right hidden md:block">
-            <VocabularyStatus :word="response" :known-states-override="knownStates ?? undefined" />
+            <VocabularyStatus :word="response" :known-states-override="knownStatesOverride" />
             Rank #{{ response.mainReading.frequencyRank }}
           </div>
           <div class="md:text-right pt-4 cursor-pointer" @click="selectMediaType(null)">

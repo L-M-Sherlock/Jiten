@@ -98,7 +98,8 @@ export enum KnownState {
   Mature = 2,
   Blacklisted = 3,
   Due = 4,
-  Mastered = 5
+  Mastered = 5,
+  Redundant = 6
 }
 
 export enum DifficultyDisplayStyle {
@@ -127,12 +128,12 @@ export enum DeckStatus {
 }
 
 export enum FsrsState {
-  New = 0,
   Learning = 1,
   Review = 2,
   Relearning = 3,
   Blacklisted = 4,
   Mastered = 5,
+  Suspended = 6,
 }
 
 export enum FsrsRating {

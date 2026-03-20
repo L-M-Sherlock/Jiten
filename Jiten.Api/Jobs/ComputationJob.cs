@@ -18,6 +18,74 @@ public class ComputationJob(
     private static readonly object CoverageComputeLock = new();
     private static readonly HashSet<string> CoverageComputingUserIds = new();
     private const int COVERAGE_CHUNK_SIZE = 1024;
+
+    private const string CoverageWordStateCtes = """
+            fsrs_mature_direct AS (
+                SELECT fc."WordId", fc."ReadingIndex"
+                FROM "user"."FsrsCards" fc
+                WHERE fc."UserId" = {0}::uuid
+                  AND (
+                      fc."State" IN (4, 5, 6)
+                      OR (fc."LastReview" IS NOT NULL AND (fc."Due" - fc."LastReview") >= INTERVAL '21 days')
+                  )
+            ),
+            fsrs_mature AS (
+                SELECT "WordId", "ReadingIndex" FROM fsrs_mature_direct
+                UNION
+                SELECT kana_wf."WordId", kana_wf."ReadingIndex"
+                FROM fsrs_mature_direct fmd
+                JOIN "jmdict"."WordForms" kanji_wf ON kanji_wf."WordId" = fmd."WordId" AND kanji_wf."ReadingIndex" = fmd."ReadingIndex" AND kanji_wf."FormType" = 0
+                JOIN "jmdict"."WordForms" kana_wf ON kana_wf."WordId" = fmd."WordId" AND kana_wf."FormType" = 1
+            ),
+            wordset_known AS (
+                SELECT wsm."WordId", wsm."ReadingIndex"
+                FROM "user"."UserWordSetStates" uwss
+                JOIN "jiten"."WordSetMembers" wsm ON wsm."SetId" = uwss."SetId"
+                WHERE uwss."UserId" = {0}::uuid
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM "user"."FsrsCards" fc
+                      WHERE fc."UserId" = {0}::uuid
+                        AND fc."WordId" = wsm."WordId"
+                        AND fc."ReadingIndex" = wsm."ReadingIndex"
+                  )
+            ),
+            mature_known_direct AS (
+                SELECT "WordId", "ReadingIndex" FROM fsrs_mature_direct
+                UNION
+                SELECT "WordId", "ReadingIndex" FROM wordset_known
+            ),
+            mature_known AS (
+                SELECT "WordId", "ReadingIndex" FROM mature_known_direct
+                UNION
+                SELECT kana_wf."WordId", kana_wf."ReadingIndex"
+                FROM mature_known_direct mkd
+                JOIN "jmdict"."WordForms" kanji_wf ON kanji_wf."WordId" = mkd."WordId" AND kanji_wf."ReadingIndex" = mkd."ReadingIndex" AND kanji_wf."FormType" = 0
+                JOIN "jmdict"."WordForms" kana_wf ON kana_wf."WordId" = mkd."WordId" AND kana_wf."FormType" = 1
+            ),
+            fsrs_young_direct AS (
+                SELECT fc."WordId", fc."ReadingIndex"
+                FROM "user"."FsrsCards" fc
+                WHERE fc."UserId" = {0}::uuid
+                  AND fc."State" IN (1, 2, 3, 6)
+                  AND fc."LastReview" IS NOT NULL
+                  AND (fc."Due" - fc."LastReview") < INTERVAL '21 days'
+            ),
+            fsrs_young AS (
+                SELECT y."WordId", y."ReadingIndex" FROM (
+                    SELECT "WordId", "ReadingIndex" FROM fsrs_young_direct
+                    UNION
+                    SELECT kana_wf."WordId", kana_wf."ReadingIndex"
+                    FROM fsrs_young_direct fyd
+                    JOIN "jmdict"."WordForms" kanji_wf ON kanji_wf."WordId" = fyd."WordId" AND kanji_wf."ReadingIndex" = fyd."ReadingIndex" AND kanji_wf."FormType" = 0
+                    JOIN "jmdict"."WordForms" kana_wf ON kana_wf."WordId" = fyd."WordId" AND kana_wf."FormType" = 1
+                ) y
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM mature_known mk
+                    WHERE mk."WordId" = y."WordId" AND mk."ReadingIndex" = y."ReadingIndex"
+                )
+            )
+        """;
     private const string COVERAGE_WORK_MEM = "256MB";
     private static readonly TimeSpan CoverageRetryDelay = TimeSpan.FromSeconds(60);
 
@@ -215,42 +283,8 @@ public class ComputationJob(
                     ((SELECT max_deck_id FROM deck_bounds) / {{COVERAGE_CHUNK_SIZE}} + 1) * {{COVERAGE_CHUNK_SIZE}} - 1
                 )::int AS deck_id
             ),
-            fsrs_mature AS (
-                SELECT fc."WordId", fc."ReadingIndex"
-                FROM "user"."FsrsCards" fc
-                WHERE fc."UserId" = {0}::uuid
-                  AND (
-                      fc."State" = 4
-                      OR fc."State" = 5
-                      OR (fc."LastReview" IS NOT NULL AND (fc."Due" - fc."LastReview") >= INTERVAL '21 days')
-                  )
-            ),
-            wordset_known AS (
-                SELECT wsm."WordId", wsm."ReadingIndex"
-                FROM "user"."UserWordSetStates" uwss
-                JOIN "jiten"."WordSetMembers" wsm ON wsm."SetId" = uwss."SetId"
-                WHERE uwss."UserId" = {0}::uuid
-                  AND NOT EXISTS (
-                      SELECT 1
-                      FROM "user"."FsrsCards" fc
-                      WHERE fc."UserId" = {0}::uuid
-                        AND fc."WordId" = wsm."WordId"
-                        AND fc."ReadingIndex" = wsm."ReadingIndex"
-                  )
-            ),
-            mature_known AS (
-                SELECT "WordId", "ReadingIndex" FROM fsrs_mature
-                UNION
-                SELECT "WordId", "ReadingIndex" FROM wordset_known
-            ),
-            fsrs_young AS (
-                SELECT fc."WordId", fc."ReadingIndex"
-                FROM "user"."FsrsCards" fc
-                WHERE fc."UserId" = {0}::uuid
-                  AND fc."State" IN (1, 2, 3)
-                  AND fc."LastReview" IS NOT NULL
-                  AND (fc."Due" - fc."LastReview") < INTERVAL '21 days'
-            ),
+        """ + CoverageWordStateCtes + $$"""
+            ,
             mature_hits AS (
                 SELECT dw."DeckId" AS deck_id,
                        SUM(dw."Occurrences") AS occ_hits,
@@ -343,42 +377,8 @@ public class ComputationJob(
 
         var sql = """
             WITH
-            fsrs_mature AS (
-                SELECT fc."WordId", fc."ReadingIndex"
-                FROM "user"."FsrsCards" fc
-                WHERE fc."UserId" = {0}::uuid
-                  AND (
-                      fc."State" = 4
-                      OR fc."State" = 5
-                      OR (fc."LastReview" IS NOT NULL AND (fc."Due" - fc."LastReview") >= INTERVAL '21 days')
-                  )
-            ),
-            wordset_known AS (
-                SELECT wsm."WordId", wsm."ReadingIndex"
-                FROM "user"."UserWordSetStates" uwss
-                JOIN "jiten"."WordSetMembers" wsm ON wsm."SetId" = uwss."SetId"
-                WHERE uwss."UserId" = {0}::uuid
-                  AND NOT EXISTS (
-                      SELECT 1
-                      FROM "user"."FsrsCards" fc
-                      WHERE fc."UserId" = {0}::uuid
-                        AND fc."WordId" = wsm."WordId"
-                        AND fc."ReadingIndex" = wsm."ReadingIndex"
-                  )
-            ),
-            mature_known AS (
-                SELECT "WordId", "ReadingIndex" FROM fsrs_mature
-                UNION
-                SELECT "WordId", "ReadingIndex" FROM wordset_known
-            ),
-            fsrs_young AS (
-                SELECT fc."WordId", fc."ReadingIndex"
-                FROM "user"."FsrsCards" fc
-                WHERE fc."UserId" = {0}::uuid
-                  AND fc."State" IN (1, 2, 3)
-                  AND fc."LastReview" IS NOT NULL
-                  AND (fc."Due" - fc."LastReview") < INTERVAL '21 days'
-            ),
+        """ + CoverageWordStateCtes + """
+            ,
             deck_denoms AS (
                 SELECT d."WordCount", d."UniqueWordCount"
                 FROM "jiten"."Decks" d
@@ -489,9 +489,9 @@ public class ComputationJob(
             await using var userContext = await userContextFactory.CreateDbContextAsync();
 
             // Get scoring weights from configuration
-            var youngWeight = double.Parse(configuration["KanjiGrid:YoungScoreWeight"] ?? "0.5");
-            var matureWeight = double.Parse(configuration["KanjiGrid:MatureScoreWeight"] ?? "1.0");
-            var masteredWeight = double.Parse(configuration["KanjiGrid:MasteredScoreWeight"] ?? "1.0");
+            var youngWeight = double.Parse(configuration["KanjiGrid:YoungScoreWeight"] ?? "0.5", CultureInfo.InvariantCulture);
+            var matureWeight = double.Parse(configuration["KanjiGrid:MatureScoreWeight"] ?? "1.0", CultureInfo.InvariantCulture);
+            var masteredWeight = double.Parse(configuration["KanjiGrid:MasteredScoreWeight"] ?? "1.0", CultureInfo.InvariantCulture);
 
             // Compute kanji scores
             var sql = $$"""
