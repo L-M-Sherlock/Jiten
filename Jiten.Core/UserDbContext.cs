@@ -38,6 +38,7 @@ public class UserDbContext : IdentityDbContext<User>
 
     public DbSet<UserWordSetState> UserWordSetStates { get; set; }
     public DbSet<UserStudyDeck> UserStudyDecks { get; set; }
+    public DbSet<UserStudyDeckWord> UserStudyDeckWords { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -318,13 +319,43 @@ public class UserDbContext : IdentityDbContext<User>
             entity.HasKey(usd => usd.UserStudyDeckId);
             if (isNpgsql)
                 entity.Property(usd => usd.UserId).HasConversion(guidToString).HasColumnType("uuid").IsRequired();
-            entity.HasIndex(usd => new { usd.UserId, usd.DeckId }).IsUnique();
-            entity.HasIndex(usd => usd.UserId).HasDatabaseName("IX_UserStudyDeck_UserId");
+            entity.Property(usd => usd.DeckId).IsRequired(false);
+            entity.Property(usd => usd.Name).HasMaxLength(200);
+            entity.Property(usd => usd.Description).HasMaxLength(2000);
             entity.Property(usd => usd.CreatedAt).IsRequired();
+
+            if (isNpgsql)
+            {
+                entity.HasIndex(usd => new { usd.UserId, usd.DeckId })
+                      .IsUnique()
+                      .HasFilter("\"DeckId\" IS NOT NULL");
+            }
+
+            entity.HasIndex(usd => usd.UserId).HasDatabaseName("IX_UserStudyDeck_UserId");
 
             entity.HasOne<User>()
                   .WithMany()
                   .HasForeignKey(usd => usd.UserId)
+                  .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<UserStudyDeckWord>(entity =>
+        {
+            entity.HasKey(w => new { w.UserStudyDeckId, w.WordId, w.ReadingIndex });
+            entity.HasIndex(w => new { w.UserStudyDeckId, w.SortOrder });
+            if (isNpgsql)
+            {
+                entity.HasIndex(w => new { w.UserStudyDeckId, w.Occurrences })
+                      .IsDescending(false, true);
+            }
+            else
+            {
+                entity.HasIndex(w => new { w.UserStudyDeckId, w.Occurrences });
+            }
+
+            entity.HasOne(w => w.StudyDeck)
+                  .WithMany(sd => sd.Words)
+                  .HasForeignKey(w => w.UserStudyDeckId)
                   .OnDelete(DeleteBehavior.Cascade);
         });
 

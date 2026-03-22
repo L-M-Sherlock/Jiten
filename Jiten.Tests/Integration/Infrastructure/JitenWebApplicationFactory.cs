@@ -55,9 +55,9 @@ public class JitenWebApplicationFactory : WebApplicationFactory<ApiProgram>, IAs
             foreach (var d in hostedServices)
                 services.Remove(d);
 
-            // Replace Redis
+            // Replace Redis with in-memory mock that supports GetDatabase()
             services.RemoveAll<IConnectionMultiplexer>();
-            services.AddSingleton(Mock.Of<IConnectionMultiplexer>());
+            services.AddSingleton(InMemoryRedis.Create());
 
             // Register SQLite in-memory DbContexts (Npgsql is skipped via
             // environment guard in Program.cs, so no dual-provider conflict).

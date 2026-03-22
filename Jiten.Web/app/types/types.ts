@@ -540,6 +540,16 @@ export interface DictionaryEntry {
   frequencyRank: number;
 }
 
+export interface StaticDeckWordDto extends DictionaryEntry {
+  occurrences: number;
+  deckSortOrder: number;
+}
+
+export interface StaticDeckWordsResponse {
+  deckName: string;
+  words: StaticDeckWordDto[];
+}
+
 export interface DictionarySearchResult {
   query: string;
   queryType: string;
@@ -706,13 +716,17 @@ export interface BlacklistedDeckDto {
 // SRS Study types
 export interface StudyDeckDto {
   userStudyDeckId: number;
-  deckId: number;
+  deckType: StudyDeckType;
+  name: string;
+  description?: string;
+  deckId?: number;
   title: string;
   romajiTitle?: string;
   englishTitle?: string;
   coverName?: string;
   mediaType: MediaType;
   sortOrder: number;
+  isActive: boolean;
   downloadType: number;
   order: number;
   minFrequency: number;
@@ -721,8 +735,9 @@ export interface StudyDeckDto {
   minOccurrences?: number;
   maxOccurrences?: number;
   excludeKana: boolean;
-  excludeMatureMasteredBlacklisted: boolean;
-  excludeAllTrackedWords: boolean;
+  minGlobalFrequency?: number;
+  maxGlobalFrequency?: number;
+  posFilter?: string;
   totalWords: number;
   unseenCount: number;
   learningCount: number;
@@ -731,6 +746,17 @@ export interface StudyDeckDto {
   blacklistedCount: number;
   suspendedCount: number;
   dueReviewCount: number;
+  warning?: string;
+}
+
+export type StudyMoreMode = 'extraNew' | 'extraReview' | 'ahead' | 'mistakes';
+
+export interface StudyMoreParams {
+  mode: StudyMoreMode;
+  extraNewCards?: number;
+  extraReviews?: number;
+  aheadMinutes?: number;
+  mistakeDays?: number;
 }
 
 export interface StudyBatchResponse {
@@ -805,16 +831,17 @@ export interface StudyExampleSourceDto {
 }
 
 export type StudyInterleaving = 'Mixed' | 'NewFirst' | 'ReviewsFirst';
-export type StudyNewCardOrder = 'DeckFrequency' | 'GlobalFrequency' | 'Random';
+export type StudyNewCardGathering = 'TopDeck' | 'RoundRobin';
 export type StudyReviewFrom = 'AllTracked' | 'StudyDecksOnly';
 export type ExampleSentencePosition = 'Hidden' | 'Back' | 'Front';
 
 export interface StudySettingsDto {
   newCardsPerDay: number;
   maxReviewsPerDay: number;
+  batchSize: number;
   gradingButtons: number;
   interleaving: StudyInterleaving;
-  newCardOrder: StudyNewCardOrder;
+  newCardGathering: StudyNewCardGathering;
   reviewFrom: StudyReviewFrom;
   showPitchAccent: boolean;
   exampleSentencePosition: ExampleSentencePosition;
@@ -823,6 +850,10 @@ export interface StudySettingsDto {
   showNextInterval: boolean;
   showKeybinds: boolean;
   showElapsedTime: boolean;
+}
+
+export interface CardExamplesResponse {
+  examples: Record<string, StudyExampleSentenceDto>;
 }
 
 export interface DueSummaryDto {
@@ -870,7 +901,10 @@ export interface HeatmapDay {
 }
 
 export interface AddStudyDeckRequest {
-  deckId: number;
+  deckType: StudyDeckType;
+  name?: string;
+  description?: string;
+  deckId?: number;
   downloadType: number;
   order: number;
   minFrequency: number;
@@ -879,11 +913,14 @@ export interface AddStudyDeckRequest {
   minOccurrences?: number;
   maxOccurrences?: number;
   excludeKana: boolean;
-  excludeMatureMasteredBlacklisted: boolean;
-  excludeAllTrackedWords: boolean;
+  minGlobalFrequency?: number;
+  maxGlobalFrequency?: number;
+  posFilter?: string;
 }
 
 export interface UpdateStudyDeckRequest {
+  name?: string;
+  description?: string;
   downloadType: number;
   order: number;
   minFrequency: number;
@@ -892,6 +929,7 @@ export interface UpdateStudyDeckRequest {
   minOccurrences?: number;
   maxOccurrences?: number;
   excludeKana: boolean;
-  excludeMatureMasteredBlacklisted: boolean;
-  excludeAllTrackedWords: boolean;
+  minGlobalFrequency?: number;
+  maxGlobalFrequency?: number;
+  posFilter?: string;
 }

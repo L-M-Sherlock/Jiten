@@ -222,8 +222,8 @@
     </div>
 
     <div class="flex gap-3 w-full">
-      <Button v-if="!isAllCaughtUp" label="Study More" severity="secondary" class="flex-1" @click="emit('studyMore')" />
-      <Button :label="isAllCaughtUp ? 'Back to Decks' : 'Done'" class="flex-1" @click="emit('close')" />
+      <Button label="Study More" severity="secondary" class="flex-1" @click="emit('studyMore')" />
+      <Button label="Done" class="flex-1" @click="emit('close')" />
     </div>
   </div>
 </template>

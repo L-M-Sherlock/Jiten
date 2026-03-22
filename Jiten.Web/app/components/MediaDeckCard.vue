@@ -147,6 +147,11 @@
       command: toggleIgnore,
     },
     {
+      label: 'Study with SRS',
+      icon: 'pi pi-play',
+      command: () => { showStudyDeckDialog.value = true; },
+    },
+    {
       label: 'Rate difficulty',
       icon: 'pi pi-gauge',
       visible: props.deck.status === DeckStatus.Completed && !props.deck.parentDeckId,
@@ -498,15 +503,6 @@
                         class="text-center"
                         icon="pi pi-download"
                         @click="showDownloadDialog = true"
-                      />
-                    </Tooltip>
-                    <Tooltip v-if="authStore.isAuthenticated" content="Study with SRS">
-                      <Button
-                        :label="isCompact ? undefined : 'Study'"
-                        class="text-center"
-                        icon="pi pi-play"
-                        severity="success"
-                        @click="showStudyDeckDialog = true"
                       />
                     </Tooltip>
                     <Button

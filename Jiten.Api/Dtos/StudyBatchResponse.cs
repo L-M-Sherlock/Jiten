@@ -79,10 +79,28 @@ public class StudyExampleSourceDto
     public int MediaType { get; set; }
 }
 
+public class CardExamplesRequest
+{
+    public List<WordPair> Pairs { get; set; } = new();
+    public class WordPair
+    {
+        public int WordId { get; set; }
+        public byte ReadingIndex { get; set; }
+    }
+}
+
+public class CardExamplesResponse
+{
+    public Dictionary<string, StudyExampleSentenceDto> Examples { get; set; } = new();
+}
+
 public class StudyDeckDto
 {
     public int UserStudyDeckId { get; set; }
-    public int DeckId { get; set; }
+    public StudyDeckType DeckType { get; set; }
+    public string Name { get; set; } = "";
+    public string? Description { get; set; }
+    public int? DeckId { get; set; }
     public string Title { get; set; } = "";
     public string? RomajiTitle { get; set; }
     public string? EnglishTitle { get; set; }
@@ -97,8 +115,9 @@ public class StudyDeckDto
     public int? MinOccurrences { get; set; }
     public int? MaxOccurrences { get; set; }
     public bool ExcludeKana { get; set; }
-    public bool ExcludeMatureMasteredBlacklisted { get; set; }
-    public bool ExcludeAllTrackedWords { get; set; }
+    public int? MinGlobalFrequency { get; set; }
+    public int? MaxGlobalFrequency { get; set; }
+    public string? PosFilter { get; set; }
     public int TotalWords { get; set; }
     public int UnseenCount { get; set; }
     public int LearningCount { get; set; }
@@ -107,5 +126,7 @@ public class StudyDeckDto
     public int BlacklistedCount { get; set; }
     public int SuspendedCount { get; set; }
     public int DueReviewCount { get; set; }
+    public bool IsActive { get; set; }
+    public string? Warning { get; set; }
 }
 

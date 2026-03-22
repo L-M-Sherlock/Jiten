@@ -73,6 +73,14 @@ export enum DeckOrder {
   Chronological = 1,
   GlobalFrequency = 2,
   DeckFrequency = 3,
+  ImportOrder = 4,
+  Random = 5,
+}
+
+export enum StudyDeckType {
+  MediaDeck = 0,
+  GlobalDynamic = 1,
+  StaticWordList = 2,
 }
 
 export enum SortOrder {

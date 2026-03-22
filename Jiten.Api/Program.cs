@@ -338,6 +338,8 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
 builder.Services.AddSingleton<IWordFormSiblingCache, WordFormSiblingCache>();
 builder.Services.AddScoped<IDeckWordResolver, DeckWordResolver>();
+builder.Services.AddScoped<IDeckDownloadService, DeckDownloadService>();
+builder.Services.AddScoped<IDeckImportService, DeckImportService>();
 builder.Services.AddSingleton<ISrsDebounceService, SrsDebounceService>();
 builder.Services.AddSingleton<IStudySessionService, StudySessionService>();
 builder.Services.AddSingleton<IParseThrottleService, ParseThrottleService>();
@@ -348,6 +350,7 @@ builder.Services.AddScoped<ICdnService, BunnyCdnService>();
 builder.Services.AddScoped<Jiten.Core.Services.RequestActivityService>();
 builder.Services.AddScoped<Jiten.Core.Services.NotificationService>();
 builder.Services.AddHostedService<ParserWarmupService>();
+builder.Services.AddHostedService<WordFormSiblingCacheWarmupService>();
 
 builder.Services.AddRateLimiter(options =>
 {

@@ -1,6 +1,7 @@
 <script setup lang="ts">
   import { useSrsStore } from '~/stores/srsStore';
   import { FsrsRating } from '~/types';
+  import type { StudyMoreParams } from '~/types';
   import { useStudyKeyboard } from '~/composables/useStudyKeyboard';
   import { useSwipeGesture } from '~/composables/useSwipeGesture';
   import { useToast } from 'primevue/usetoast';
@@ -147,11 +148,11 @@
   onUnmounted(() => barObserver?.disconnect());
 
   const barColors = {
-    rainbow: { easy: 'bg-emerald-400', good: 'bg-blue-400', hard: 'bg-gray-400', action: 'bg-gray-400', again: 'bg-red-400' },
+    rainbow: { easy: 'bg-emerald-400', good: 'bg-blue-400', hard: 'bg-orange-300', action: 'bg-gray-400', again: 'bg-red-400' },
     mono: { easy: 'bg-surface-500', good: 'bg-surface-400', hard: 'bg-surface-300', action: 'bg-surface-300', again: 'bg-surface-600 dark:bg-surface-500' },
   } as const;
   const dotColors = {
-    rainbow: { again: 'bg-red-400', hard: 'bg-gray-400', good: 'bg-blue-400', easy: 'bg-emerald-400' },
+    rainbow: { again: 'bg-red-400', hard: 'bg-orange-300', good: 'bg-blue-400', easy: 'bg-emerald-400' },
     mono: { again: 'bg-surface-600', hard: 'bg-surface-400', good: 'bg-surface-400', easy: 'bg-surface-500' },
   } as const;
 
@@ -266,11 +267,17 @@
     router.push('/srs/decks');
   }
 
+  const showStudyMoreDialog = ref(false);
+
   function studyMore() {
-    srsStore.resetSession();
-    elapsedSeconds.value = 0;
-    srsStore.fetchBatch();
-    startElapsedTimer();
+    showStudyMoreDialog.value = true;
+  }
+
+  async function handleStudyMoreSelect(params: StudyMoreParams) {
+    showStudyMoreDialog.value = false;
+    srsStore.startStudyMore(params);
+    await srsStore.fetchBatch();
+    if (!srsStore.isSessionComplete) startElapsedTimer();
   }
 </script>
 
@@ -529,13 +536,22 @@
           <span>New today: {{ srsStore.newCardsToday }}</span>
           <span>Reviews today: {{ srsStore.reviewsToday }}</span>
         </div>
-        <Button label="Back to Decks" @click="exitStudy" />
+        <div class="flex justify-center gap-3">
+          <Button label="Study More" icon="pi pi-plus" @click="studyMore" />
+          <Button label="Back to Decks" severity="secondary" @click="exitStudy" />
+        </div>
       </div>
     </div>
 
     <Dialog v-model:visible="showSettingsDialog" header="Study Settings" :modal="true" class="w-full md:w-[36rem]">
       <SettingsSrsStudy v-if="showSettingsDialog" inline />
     </Dialog>
+
+    <SrsStudyMoreDialog
+      v-model:visible="showStudyMoreDialog"
+      :review-budget-hit="srsStore.reviewsToday >= srsStore.studySettings.maxReviewsPerDay"
+      @select="handleStudyMoreSelect"
+    />
   </div>
 </template>
 

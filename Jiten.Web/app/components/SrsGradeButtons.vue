@@ -31,7 +31,7 @@
 
   const buttons4 = [
     { rating: FsrsRating.Again, label: 'Again', key: '1', severity: 'danger' as const, swipe: '← swipe' },
-    { rating: FsrsRating.Hard, label: 'Hard', key: '2', severity: 'secondary' as const, swipe: null },
+    { rating: FsrsRating.Hard, label: 'Hard', key: '2', severity: 'warn' as const, swipe: null },
     { rating: FsrsRating.Good, label: 'Good', key: '3', severity: 'success' as const, swipe: 'swipe →' },
     { rating: FsrsRating.Easy, label: 'Easy', key: '4', severity: 'info' as const, swipe: null },
   ];
@@ -81,8 +81,30 @@
       </Button>
     </div>
 
+    <!-- Undo (visible below Show Answer without flipping) -->
+    <div v-if="!isFlipped && canUndo" class="flex justify-center">
+      <Button
+        severity="secondary"
+        size="small"
+        text
+        :disabled="props.disabled"
+        class="min-h-[36px] !px-2 sm:!px-3"
+        :class="{ 'kb-pressed': props.pressedKey === 'z' }"
+        aria-label="Undo"
+        @click="emit('undo')"
+      >
+        <template #default>
+          <div class="flex flex-col items-center sm:flex-row sm:gap-0">
+            <Icon name="material-symbols:undo" size="16" class="sm:hidden" />
+            <span class="text-[10px] sm:text-sm sm:leading-normal">Undo</span>
+            <span v-if="showKeybinds" class="keybind ml-1 text-xs opacity-60 hidden sm:inline">Z</span>
+          </div>
+        </template>
+      </Button>
+    </div>
+
     <!-- Grade buttons when flipped -->
-    <div v-else class="flex gap-2 justify-center">
+    <div v-if="isFlipped" class="flex gap-2 justify-center">
       <Button
         v-for="btn in (gradingButtons === 4 ? buttons4 : buttons2)"
         :key="`${btn.rating}-${props.monochrome}`"
@@ -118,8 +140,8 @@
         @click="emit('blacklist')"
       >
         <template #default>
-          <div class="flex flex-col items-center sm:flex-row sm:gap-0">
-            <Icon name="material-symbols:block" size="16" class="sm:hidden" />
+          <div class="flex flex-col items-center sm:flex-row sm:gap-1.5">
+            <Icon name="material-symbols:block" size="16" />
             <span class="text-[10px] sm:text-sm sm:leading-normal">Blacklist</span>
             <span v-if="showKeybinds" class="keybind ml-1 text-xs opacity-60 hidden sm:inline">B</span>
           </div>
@@ -137,95 +159,26 @@
         @click="emit('master')"
       >
         <template #default>
-          <div class="flex flex-col items-center sm:flex-row sm:gap-0">
-            <Icon name="material-symbols:star" size="16" class="sm:hidden" />
+          <div class="flex flex-col items-center sm:flex-row sm:gap-1.5">
+            <Icon name="material-symbols:star" size="16" />
             <span class="text-[10px] sm:text-sm sm:leading-normal">Master</span>
             <span v-if="showKeybinds" class="keybind ml-1 text-xs opacity-60 hidden sm:inline">M</span>
           </div>
         </template>
       </Button>
-      <!-- Suspend -->
+      <!-- More button -->
       <Button
         severity="secondary"
         size="small"
         outlined
-        :disabled="props.disabled"
-        class="min-h-[36px] !px-2 sm:!px-3 hidden sm:flex"
-        :class="{ 'kb-pressed': props.pressedKey === 's' }"
-        aria-label="Suspend"
-        @click="emit('suspend')"
-      >
-        <template #default>
-          <div class="flex flex-row gap-0">
-            <span class="text-sm leading-normal">Suspend</span>
-            <span v-if="showKeybinds" class="keybind ml-1 text-xs opacity-60 hidden sm:inline">S</span>
-          </div>
-        </template>
-      </Button>
-      <!-- Forget -->
-      <Button
-        severity="secondary"
-        size="small"
-        outlined
-        :disabled="props.disabled"
-        class="min-h-[36px] !px-2 sm:!px-3 hidden sm:flex"
-        aria-label="Forget"
-        @click="emit('forget', $event)"
-      >
-        <template #default>
-          <div class="flex flex-row gap-0">
-            <span class="text-sm leading-normal">Forget</span>
-          </div>
-        </template>
-      </Button>
-      <!-- Settings -->
-      <Button
-        severity="secondary"
-        size="small"
-        outlined
-        class="min-h-[36px] !px-2 sm:!px-3 hidden sm:flex md:hidden"
-        aria-label="Settings"
-        @click="emit('settings')"
-      >
-        <template #default>
-          <div class="flex flex-row gap-0">
-            <span class="text-sm leading-normal">Settings</span>
-          </div>
-        </template>
-      </Button>
-      <!-- Undo -->
-      <Button
-        v-if="canUndo"
-        severity="secondary"
-        size="small"
-        text
-        :disabled="props.disabled"
         class="min-h-[36px] !px-2 sm:!px-3"
-        :class="{ 'kb-pressed': props.pressedKey === 'z' }"
-        aria-label="Undo"
-        @click="emit('undo')"
-      >
-        <template #default>
-          <div class="flex flex-col items-center sm:flex-row sm:gap-0">
-            <Icon name="material-symbols:undo" size="16" class="sm:hidden" />
-            <span class="text-[10px] sm:text-sm sm:leading-normal">Undo</span>
-            <span v-if="showKeybinds" class="keybind ml-1 text-xs opacity-60 hidden sm:inline">Z</span>
-          </div>
-        </template>
-      </Button>
-      <!-- More button — mobile only, opens overflow popover -->
-      <Button
-        severity="secondary"
-        size="small"
-        outlined
-        class="min-h-[36px] !px-2 sm:hidden"
         aria-label="More actions"
         @click="toggleMore"
       >
         <template #default>
-          <div class="flex flex-col items-center">
-            <Icon name="material-symbols:more-horiz" size="16" />
-            <span class="text-[10px]">More</span>
+          <div class="flex flex-col items-center sm:flex-row sm:gap-0">
+            <Icon name="material-symbols:more-horiz" size="16" class="sm:hidden" />
+            <span class="text-[10px] sm:text-sm sm:leading-normal">More</span>
           </div>
         </template>
       </Button>

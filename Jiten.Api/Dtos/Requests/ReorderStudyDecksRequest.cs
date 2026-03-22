@@ -8,5 +8,6 @@ public class ReorderStudyDecksRequest
     {
         public int UserStudyDeckId { get; set; }
         public int SortOrder { get; set; }
+        public bool IsActive { get; set; } = true;
     }
 }

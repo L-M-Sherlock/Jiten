@@ -85,8 +85,10 @@
     });
   });
 
+  const cardExample = computed(() => srsStore.getCardExample(props.card.wordId, props.card.readingIndex));
+
   const exampleSentenceHtml = computed(() => {
-    const ex = props.card.exampleSentence;
+    const ex = cardExample.value;
     if (!ex) return null;
     const { text, wordPosition, wordLength } = ex;
     if (wordPosition < 0 || wordLength <= 0 || wordPosition >= text.length) {
@@ -257,27 +259,27 @@
             <blockquote class="relative inline-block border-l-4 border-primary-500 pl-5 pr-3 py-3 bg-surface-50 dark:bg-surface-800 rounded-r shadow-sm overflow-hidden w-full">
               <div v-html="exampleSentenceHtml" class="text-sm leading-relaxed" />
             </blockquote>
-            <div v-if="card.exampleSentence?.sourceDeck" class="flex items-center mt-1">
+            <div v-if="cardExample?.sourceDeck" class="flex items-center mt-1">
               <span class="text-xs italic mr-2 ml-4">Source:</span>
               <div class="inline-flex items-center text-xs flex-wrap">
                 <NuxtLink
-                  v-if="card.exampleSentence.sourceParent"
-                  :to="`/decks/media/${card.exampleSentence.sourceParent.deckId}/detail`"
+                  v-if="cardExample.sourceParent"
+                  :to="`/decks/media/${cardExample.sourceParent.deckId}/detail`"
                   target="_blank"
                   class="hover:underline text-primary-600"
                 >
-                  {{ localiseTitle(card.exampleSentence.sourceParent) }}
+                  {{ localiseTitle(cardExample.sourceParent) }}
                 </NuxtLink>
-                <span v-if="card.exampleSentence.sourceParent" class="mx-1">-</span>
+                <span v-if="cardExample.sourceParent" class="mx-1">-</span>
                 <NuxtLink
-                  :to="`/decks/media/${card.exampleSentence.sourceDeck.deckId}/detail`"
+                  :to="`/decks/media/${cardExample.sourceDeck.deckId}/detail`"
                   target="_blank"
                   class="hover:underline text-primary-600"
                 >
-                  {{ localiseTitle(card.exampleSentence.sourceDeck) }}
+                  {{ localiseTitle(cardExample.sourceDeck) }}
                 </NuxtLink>
                 &nbsp;
-                ({{ getMediaTypeText(card.exampleSentence.sourceDeck.mediaType) }})
+                ({{ getMediaTypeText(cardExample.sourceDeck.mediaType) }})
               </div>
             </div>
           </template>

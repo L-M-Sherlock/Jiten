@@ -10,19 +10,18 @@ public enum StudyInterleaving
     ReviewsFirst
 }
 
-[JsonConverter(typeof(JsonStringEnumConverter<StudyNewCardOrder>))]
-public enum StudyNewCardOrder
-{
-    DeckFrequency,
-    GlobalFrequency,
-    Random
-}
-
 [JsonConverter(typeof(JsonStringEnumConverter<StudyReviewFrom>))]
 public enum StudyReviewFrom
 {
     AllTracked,
     StudyDecksOnly
+}
+
+[JsonConverter(typeof(JsonStringEnumConverter<StudyNewCardGathering>))]
+public enum StudyNewCardGathering
+{
+    TopDeck,
+    RoundRobin
 }
 
 [JsonConverter(typeof(JsonStringEnumConverter<ExampleSentencePosition>))]
@@ -40,7 +39,10 @@ public class StudySettingsDto
     public int NewCardsPerDay { get; set; } = 20;
 
     [JsonPropertyName("maxReviewsPerDay")]
-    public int MaxReviewsPerDay { get; set; } = 200;
+    public int MaxReviewsPerDay { get; set; } = 1000;
+
+    [JsonPropertyName("batchSize")]
+    public int BatchSize { get; set; } = 100;
 
     [JsonPropertyName("gradingButtons")]
     public int GradingButtons { get; set; } = 4;
@@ -48,8 +50,8 @@ public class StudySettingsDto
     [JsonPropertyName("interleaving")]
     public StudyInterleaving Interleaving { get; set; } = StudyInterleaving.Mixed;
 
-    [JsonPropertyName("newCardOrder")]
-    public StudyNewCardOrder NewCardOrder { get; set; } = StudyNewCardOrder.DeckFrequency;
+    [JsonPropertyName("newCardGathering")]
+    public StudyNewCardGathering NewCardGathering { get; set; } = StudyNewCardGathering.TopDeck;
 
     [JsonPropertyName("reviewFrom")]
     public StudyReviewFrom ReviewFrom { get; set; } = StudyReviewFrom.AllTracked;

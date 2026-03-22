@@ -240,7 +240,7 @@ public class StudyTests(JitenWebApplicationFactory factory)
                 maxReviewsPerDay = 100,
                 gradingButtons = 2,
                 interleaving = "newFirst",
-                newCardOrder = "deckFrequency",
+
                 reviewFrom = "allTracked"
             });
         var updateResponse = await _client.SendAsync(update);
@@ -267,7 +267,7 @@ public class StudyTests(JitenWebApplicationFactory factory)
                 maxReviewsPerDay = 200,
                 gradingButtons = 4,
                 interleaving = "mixed",
-                newCardOrder = "deckFrequency",
+
                 reviewFrom = "allTracked"
             });
         await _client.SendAsync(settings);
@@ -1006,7 +1006,7 @@ public class StudyTests(JitenWebApplicationFactory factory)
                 maxReviewsPerDay = 200,
                 gradingButtons = 4,
                 interleaving = interleaving.ToString(),
-                newCardOrder = "deckFrequency",
+
                 reviewFrom = "allTracked"
             });
         await _client.SendAsync(settings);
@@ -1043,7 +1043,7 @@ public class StudyTests(JitenWebApplicationFactory factory)
                 maxReviewsPerDay = 200,
                 gradingButtons = 4,
                 interleaving = "mixed",
-                newCardOrder = "deckFrequency",
+
                 reviewFrom = "studyDecksOnly"
             });
         await _client.SendAsync(settings);
@@ -1110,7 +1110,7 @@ public class StudyTests(JitenWebApplicationFactory factory)
                 maxReviewsPerDay = 200,
                 gradingButtons = 4,
                 interleaving = "mixed",
-                newCardOrder = "deckFrequency",
+
                 reviewFrom = "allTracked"
             });
         await _client.SendAsync(settings);

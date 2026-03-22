@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia';
-import type { StudyDeckDto, StudyBatchResponse, StudyCardDto, StudySettingsDto, AddStudyDeckRequest, UpdateStudyDeckRequest, DueSummaryDto, DeckStreakDto } from '~/types';
+import type { StudyDeckDto, StudyBatchResponse, StudyCardDto, StudySettingsDto, AddStudyDeckRequest, UpdateStudyDeckRequest, DueSummaryDto, DeckStreakDto, StudyMoreParams, CardExamplesResponse, StudyExampleSentenceDto } from '~/types';
 import { FsrsRating } from '~/types';
 
 interface SessionReview {
@@ -53,10 +53,11 @@ export const useSrsStore = defineStore('srs', () => {
   const preWrapUpBatch = ref<StudyCardDto[]>([]);
   const studySettings = ref<StudySettingsDto>({
     newCardsPerDay: 20,
-    maxReviewsPerDay: 200,
+    maxReviewsPerDay: 1000,
+    batchSize: 100,
     gradingButtons: 4,
     interleaving: 'Mixed',
-    newCardOrder: 'DeckFrequency',
+    newCardGathering: 'TopDeck',
     reviewFrom: 'AllTracked',
     showPitchAccent: true,
     exampleSentencePosition: 'Back',
@@ -87,6 +88,9 @@ export const useSrsStore = defineStore('srs', () => {
   const fetchError = ref<string | null>(null);
   const dueSummary = ref<DueSummaryDto | null>(null);
   const deckStreak = ref<DeckStreakDto | null>(null);
+  const studyMoreParams = ref<StudyMoreParams | null>(null);
+  const exampleCache = ref(new Map<string, StudyExampleSentenceDto | null>());
+  const examplePrefetchedUpTo = ref(-1);
 
   const canUndo = computed(() => undoState.value !== null);
 
@@ -216,27 +220,110 @@ export const useSrsStore = defineStore('srs', () => {
     studyDecks.value = studyDecks.value.filter(d => d.userStudyDeckId !== id);
   }
 
+  async function addDeckWord(deckId: number, wordId: number, readingIndex: number, occurrences = 1) {
+    await $api(`srs/study-decks/${deckId}/words`, {
+      method: 'POST',
+      body: { wordId, readingIndex, occurrences },
+    });
+  }
+
+  async function removeDeckWord(deckId: number, wordId: number, readingIndex: number) {
+    await $api(`srs/study-decks/${deckId}/words/${wordId}/${readingIndex}`, { method: 'DELETE' });
+  }
+
+  async function updateDeckWordOccurrences(deckId: number, wordId: number, readingIndex: number, occurrences: number) {
+    await $api(`srs/study-decks/${deckId}/words/${wordId}/${readingIndex}`, {
+      method: 'PATCH',
+      body: { occurrences },
+    });
+  }
+
+  async function importPreview(file: File, parseFullText = false) {
+    if (file.name.endsWith('.epub')) {
+      const { stripEpubImages } = await import('~/utils/epubStripper');
+      file = await stripEpubImages(file);
+    }
+    const formData = new FormData();
+    formData.append('file', file);
+    if (parseFullText) formData.append('parseFullText', 'true');
+    return await $api<{ matched: any[]; unmatched: string[]; totalLines: number; previewToken: string }>('srs/study-decks/import/preview', {
+      method: 'POST',
+      body: formData,
+    });
+  }
+
+  async function importCommit(previewToken: string, name: string, description?: string, excludeWordIds?: number[]) {
+    const result = await $api<{ userStudyDeckId: number }>('srs/study-decks/import', {
+      method: 'POST',
+      body: { previewToken, name, description, excludeWordIds },
+    });
+    await fetchStudyDecks();
+    return result;
+  }
+
+  async function importPreviewText(lines: string[], parseFullText = false) {
+    return await $api<{ matched: any[]; unmatched: string[]; totalLines: number; previewToken: string }>('srs/study-decks/import/preview-text', {
+      method: 'POST',
+      body: { lines, parseFullText },
+    });
+  }
+
+  async function importToExistingDeck(deckId: number, previewToken: string, excludeWordIds?: number[]) {
+    const result = await $api<{ added: boolean }>(`srs/study-decks/${deckId}/import`, {
+      method: 'POST',
+      body: { previewToken, excludeWordIds },
+    });
+    await fetchStudyDecks();
+    return result;
+  }
+
+  const activeDecks = computed(() => studyDecks.value.filter(d => d.isActive));
+  const inactiveDecks = computed(() => studyDecks.value.filter(d => !d.isActive));
+
   async function reorderStudyDecks(reorderedDecks: StudyDeckDto[]) {
     studyDecks.value = reorderedDecks;
+    const active = reorderedDecks.filter(d => d.isActive);
+    const inactive = reorderedDecks.filter(d => !d.isActive);
     await $api('srs/study-decks/reorder', {
       method: 'PUT',
       body: {
-        items: reorderedDecks.map((d, i) => ({
-          userStudyDeckId: d.userStudyDeckId,
-          sortOrder: i,
-        })),
+        items: [
+          ...active.map((d, i) => ({ userStudyDeckId: d.userStudyDeckId, sortOrder: i, isActive: true })),
+          ...inactive.map((d, i) => ({ userStudyDeckId: d.userStudyDeckId, sortOrder: i, isActive: false })),
+        ],
       },
     });
   }
 
-  async function fetchBatch(limit = 20) {
+  async function toggleDeckActive(deckId: number) {
+    const deck = studyDecks.value.find(d => d.userStudyDeckId === deckId);
+    if (!deck) return;
+    deck.isActive = !deck.isActive;
+    await reorderStudyDecks([...studyDecks.value]);
+  }
+
+  async function fetchBatch(limit?: number) {
     if (isWrappingUp.value) return;
 
     isLoading.value = true;
     const isRefetch = sessionStats.value.cardsReviewed > 0;
     try {
-      const params = new URLSearchParams({ limit: String(limit) });
+      const effectiveLimit = limit ?? studySettings.value.batchSize;
+      const params = new URLSearchParams({ limit: String(effectiveLimit) });
       if (sessionId.value) params.append('sessionId', sessionId.value);
+      const sm = studyMoreParams.value;
+      if (sm) {
+        if (sm.extraNewCards) {
+          const remaining = Math.max(0, sm.extraNewCards - sessionStats.value.newCardsLearned);
+          if (remaining > 0) params.append('extraNewCards', String(remaining));
+        }
+        if (sm.extraReviews) {
+          const remaining = Math.max(0, sm.extraReviews - sessionStats.value.cardsReviewed);
+          if (remaining > 0) params.append('extraReviews', String(remaining));
+        }
+        if (sm.aheadMinutes) params.append('aheadMinutes', String(sm.aheadMinutes));
+        if (sm.mistakeDays) params.append('mistakeDays', String(sm.mistakeDays));
+      }
       const response = await $api<StudyBatchResponse>(`srs/study-batch?${params}`);
       sessionId.value = response.sessionId;
       if (isRefetch && response.cards.length > 0) {
@@ -258,11 +345,64 @@ export const useSrsStore = defineStore('srs', () => {
         sessionStats.value.startTime = new Date();
       }
       fetchError.value = null;
+
+      // Prefetch example sentences for first 4 cards (non-blocking)
+      if (currentBatch.value.length > 0)
+        prefetchExamples(currentCardIndex.value, 4);
     } catch (error) {
       console.error('Failed to fetch study batch:', error);
       fetchError.value = 'Failed to load cards. Please try again.';
     } finally {
       isLoading.value = false;
+    }
+  }
+
+  function cardExampleKey(c: StudyCardDto) {
+    return `${c.wordId}-${c.readingIndex}`;
+  }
+
+  function getCardExample(wordId: number, readingIndex: number): StudyExampleSentenceDto | null | undefined {
+    return exampleCache.value.get(`${wordId}-${readingIndex}`);
+  }
+
+  async function prefetchExamples(fromIndex: number, count: number) {
+    const end = Math.min(fromIndex + count, currentBatch.value.length);
+    const pairs: { wordId: number; readingIndex: number }[] = [];
+
+    for (let i = fromIndex; i < end; i++) {
+      const c = currentBatch.value[i];
+      if (!exampleCache.value.has(cardExampleKey(c)))
+        pairs.push({ wordId: c.wordId, readingIndex: c.readingIndex });
+    }
+
+    if (pairs.length === 0) {
+      examplePrefetchedUpTo.value = Math.max(examplePrefetchedUpTo.value, end - 1);
+      return;
+    }
+
+    try {
+      const response = await $api<CardExamplesResponse>('srs/card-examples', {
+        method: 'POST',
+        body: { pairs },
+      });
+
+      const newCache = new Map(exampleCache.value);
+      for (const p of pairs) {
+        const key = `${p.wordId}-${p.readingIndex}`;
+        newCache.set(key, response.examples[key] ?? null);
+      }
+      exampleCache.value = newCache;
+      examplePrefetchedUpTo.value = Math.max(examplePrefetchedUpTo.value, end - 1);
+    } catch {
+      // Non-blocking — examples just won't show
+    }
+  }
+
+  function ensurePrefetched() {
+    const ahead = 3;
+    const needed = currentCardIndex.value + ahead;
+    if (needed > examplePrefetchedUpTo.value) {
+      prefetchExamples(examplePrefetchedUpTo.value + 1, needed - examplePrefetchedUpTo.value);
     }
   }
 
@@ -348,6 +488,8 @@ export const useSrsStore = defineStore('srs', () => {
         currentCardIndex.value++;
       }
 
+      ensurePrefetched();
+
       isFlipped.value = false;
       cardShownAt.value = Date.now();
 
@@ -398,6 +540,8 @@ export const useSrsStore = defineStore('srs', () => {
       currentCardIndex.value++;
       isFlipped.value = false;
       cardShownAt.value = Date.now();
+
+      ensurePrefetched();
 
       if (currentCardIndex.value >= currentBatch.value.length) {
         if (isWrappingUp.value) {
@@ -507,7 +651,7 @@ export const useSrsStore = defineStore('srs', () => {
     });
   }
 
-  function resetSession() {
+  function clearSessionState() {
     sessionId.value = null;
     currentBatch.value = [];
     currentCardIndex.value = 0;
@@ -518,20 +662,28 @@ export const useSrsStore = defineStore('srs', () => {
     againCardKeys.value = new Set();
     clearedGrades.value = [];
     sessionReviews.value = [];
+    sessionStats.value = { cardsReviewed: 0, newCardsLearned: 0, correctCount: 0, startTime: null, gradeCounts: { again: 0, hard: 0, good: 0, easy: 0 } };
     undoState.value = null;
     isBusy.value = false;
     fetchError.value = null;
-    sessionStats.value = {
-      cardsReviewed: 0,
-      newCardsLearned: 0,
-      correctCount: 0,
-      startTime: null,
-      gradeCounts: { again: 0, hard: 0, good: 0, easy: 0 },
-    };
+    exampleCache.value = new Map();
+    examplePrefetchedUpTo.value = -1;
+  }
+
+  function startStudyMore(params: StudyMoreParams) {
+    studyMoreParams.value = params;
+    clearSessionState();
+  }
+
+  function resetSession() {
+    studyMoreParams.value = null;
+    clearSessionState();
   }
 
   return {
     studyDecks,
+    activeDecks,
+    inactiveDecks,
     currentBatch,
     currentCardIndex,
     isFlipped,
@@ -562,12 +714,23 @@ export const useSrsStore = defineStore('srs', () => {
     addStudyDeck,
     updateStudyDeck,
     removeStudyDeck,
+    addDeckWord,
+    removeDeckWord,
+    updateDeckWordOccurrences,
+    importPreview,
+    importCommit,
+    importPreviewText,
+    importToExistingDeck,
     reorderStudyDecks,
+    toggleDeckActive,
+    studyMoreParams,
+    getCardExample,
     fetchBatch,
     revealCard,
     gradeCard,
     quickAction,
     undoLastAction,
+    startStudyMore,
     wrapUp,
     againCardKeys,
     cancelWrapUp,

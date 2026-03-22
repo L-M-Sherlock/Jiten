@@ -192,7 +192,7 @@
       class="hidden sm:block border-2 border-dashed rounded-xl p-6 text-center transition-colors"
       :class="dragOver
         ? 'border-primary bg-primary-50 dark:bg-primary-900/20'
-        : 'border-gray-300 dark:border-gray-600'"
+        : 'border-surface-300 dark:border-surface-600'"
       @dragover.prevent="dragOver = true"
       @dragleave.prevent="dragOver = false"
       @drop.prevent="onDrop"
@@ -223,11 +223,11 @@
       <div
         v-for="(dict, index) in dictionaries"
         :key="dict.id"
-        class="border rounded-lg p-4 bg-white dark:bg-gray-800 flex flex-col sm:flex-row sm:items-center gap-3 transition-colors"
+        class="border rounded-lg p-4 bg-surface-0 dark:bg-surface-900 flex flex-col sm:flex-row sm:items-center gap-3 transition-colors"
         :class="{
           'border-primary bg-primary-50/50 dark:bg-primary-900/20': dropIndex === index && dragIndex !== index,
           'opacity-50': dragIndex === index,
-          'border-gray-200 dark:border-gray-700': dropIndex !== index && dragIndex !== index,
+          'border-surface-200 dark:border-surface-700': dropIndex !== index && dragIndex !== index,
         }"
       >
         <!-- Arrows + drag handle + priority badge -->

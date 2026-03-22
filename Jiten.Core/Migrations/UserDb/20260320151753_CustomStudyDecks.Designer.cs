@@ -3,6 +3,7 @@ using System;
 using Jiten.Core;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Jiten.Core.Migrations.UserDb
 {
     [DbContext(typeof(UserDbContext))]
-    partial class UserDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260320151753_CustomStudyDecks")]
+    partial class CustomStudyDecks
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -311,9 +314,6 @@ namespace Jiten.Core.Migrations.UserDb
                         .HasColumnType("integer");
 
                     b.Property<bool>("ExcludeKana")
-                        .HasColumnType("boolean");
-
-                    b.Property<bool>("IsActive")
                         .HasColumnType("boolean");
 
                     b.Property<int>("MaxFrequency")
