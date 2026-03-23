@@ -42,6 +42,7 @@ interface UndoSnapshot {
 export const useSrsStore = defineStore('srs', () => {
   const { $api } = useNuxtApp();
 
+  const srsEnrolled = ref(false);
   const studyDecks = ref<StudyDeckDto[]>([]);
   const sessionId = ref<string | null>(null);
   const currentBatch = ref<StudyCardDto[]>([]);
@@ -172,14 +173,22 @@ export const useSrsStore = defineStore('srs', () => {
     };
   }
 
+  let fetchStudyDecksPromise: Promise<void> | null = null;
+
   async function fetchStudyDecks() {
-    try {
-      studyDecks.value = await $api<StudyDeckDto[]>('srs/study-decks');
-      fetchError.value = null;
-    } catch (error) {
-      console.error('Failed to fetch study decks:', error);
-      fetchError.value = 'Failed to load study decks. Please try again.';
-    }
+    if (fetchStudyDecksPromise) return fetchStudyDecksPromise;
+    fetchStudyDecksPromise = (async () => {
+      try {
+        studyDecks.value = await $api<StudyDeckDto[]>('srs/study-decks');
+        fetchError.value = null;
+      } catch (error) {
+        console.error('Failed to fetch study decks:', error);
+        fetchError.value = 'Failed to load study decks. Please try again.';
+      } finally {
+        fetchStudyDecksPromise = null;
+      }
+    })();
+    return fetchStudyDecksPromise;
   }
 
   async function fetchDueSummary() {
@@ -346,9 +355,9 @@ export const useSrsStore = defineStore('srs', () => {
       }
       fetchError.value = null;
 
-      // Prefetch example sentences for first 4 cards (non-blocking)
+      // Prefetch example sentences for first 4 cards (await so the first card has its example ready)
       if (currentBatch.value.length > 0)
-        prefetchExamples(currentCardIndex.value, 4);
+        await prefetchExamples(currentCardIndex.value, 4);
     } catch (error) {
       console.error('Failed to fetch study batch:', error);
       fetchError.value = 'Failed to load cards. Please try again.';
@@ -636,6 +645,20 @@ export const useSrsStore = defineStore('srs', () => {
     preWrapUpBatch.value = [];
   }
 
+  async function fetchEnrollment() {
+    try {
+      const res = await $api<{ enrolled: boolean }>('srs/enrolled');
+      srsEnrolled.value = res.enrolled;
+    } catch {
+      srsEnrolled.value = false;
+    }
+  }
+
+  async function enroll() {
+    const res = await $api<{ enrolled: boolean }>('srs/enroll', { method: 'POST' });
+    srsEnrolled.value = res.enrolled;
+  }
+
   async function fetchSettings() {
     try {
       studySettings.value = await $api<StudySettingsDto>('srs/study-settings');
@@ -734,6 +757,9 @@ export const useSrsStore = defineStore('srs', () => {
     wrapUp,
     againCardKeys,
     cancelWrapUp,
+    srsEnrolled,
+    fetchEnrollment,
+    enroll,
     fetchSettings,
     updateSettings,
     resetSession,

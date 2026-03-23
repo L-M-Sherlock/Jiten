@@ -4,6 +4,7 @@
   import { storeToRefs } from 'pinia';
   import { useJitenStore } from '~/stores/jitenStore';
   import { useAuthStore } from '~/stores/authStore';
+  import { useSrsStore } from '~/stores/srsStore';
 
   import { useToast } from 'primevue/usetoast';
   import { ThemeMode } from '~/types';
@@ -28,6 +29,7 @@
     themeMode,
   } = storeToRefs(store);
   const auth = useAuthStore();
+  const srs = useSrsStore();
   const tokenCookie = useCookie('token');
 
   // Mobile menu state
@@ -150,9 +152,9 @@
         <nav class="hidden md:flex items-center space-x-4">
           <nuxt-link to="/" :class="route.path === '/' ? 'font-semibold !text-purple-200' : '!text-white'">Home</nuxt-link>
           <nuxt-link to="/decks/media" :class="route.path.startsWith('/decks/media') ? 'font-semibold !text-purple-200' : '!text-white'">Media</nuxt-link>
+          <nuxt-link v-if="auth.isAuthenticated && srs.srsEnrolled" to="/srs/decks" :class="route.path.startsWith('/srs') ? 'font-semibold !text-purple-200' : '!text-white'">Study</nuxt-link>
           <nuxt-link v-if="auth.isAuthenticated" to="/profile" :class="route.path.startsWith('/profile') ? 'font-semibold !text-purple-200' : '!text-white'">Profile</nuxt-link>
           <nuxt-link v-if="auth.isAuthenticated" to="/ratings" :class="route.path === '/ratings' ? 'font-semibold !text-purple-200' : '!text-white'">Ratings</nuxt-link>
-          <nuxt-link v-if="auth.isAuthenticated" to="/srs/decks" :class="route.path.startsWith('/srs') ? 'font-semibold !text-purple-200' : '!text-white'">Study</nuxt-link>
           <nuxt-link v-if="auth.isAuthenticated" to="/settings" :class="route.path === '/settings' ? 'font-semibold !text-purple-200' : '!text-white'">Settings</nuxt-link>
           <nuxt-link to="/other" :class="route.path === '/other' ? 'font-semibold !text-purple-200' : '!text-white'">Tools</nuxt-link>
           <nuxt-link to="/faq" :class="route.path === '/faq' ? 'font-semibold !text-purple-200' : '!text-white'">FAQ</nuxt-link>
@@ -198,7 +200,6 @@
             <nuxt-link to="/decks/media" class="py-2 px-3" :class="route.path.startsWith('/decks/media') ? 'font-semibold !text-purple-200' : '!text-white'" @click="mobileMenuOpen = false">Media</nuxt-link>
             <nuxt-link v-if="auth.isAuthenticated" to="/profile" class="py-2 px-3" :class="route.path.startsWith('/profile') ? 'font-semibold !text-purple-200' : '!text-white'" @click="mobileMenuOpen = false">Profile</nuxt-link>
             <nuxt-link v-if="auth.isAuthenticated" to="/ratings" class="py-2 px-3" :class="route.path === '/ratings' ? 'font-semibold !text-purple-200' : '!text-white'" @click="mobileMenuOpen = false">Ratings</nuxt-link>
-            <nuxt-link v-if="auth.isAuthenticated" to="/srs/decks" class="py-2 px-3" :class="route.path.startsWith('/srs') ? 'font-semibold !text-purple-200' : '!text-white'" @click="mobileMenuOpen = false">Study</nuxt-link>
             <nuxt-link v-if="auth.isAuthenticated" to="/settings" class="py-2 px-3" :class="route.path === '/settings' ? 'font-semibold !text-purple-200' : '!text-white'" @click="mobileMenuOpen = false">Settings</nuxt-link>
             <nuxt-link to="/other" class="py-2 px-3" :class="route.path === '/other' ? 'font-semibold !text-purple-200' : '!text-white'" @click="mobileMenuOpen = false">Tools</nuxt-link>
             <nuxt-link to="/faq" class="py-2 px-3" :class="route.path === '/faq' ? 'font-semibold !text-purple-200' : '!text-white'" @click="mobileMenuOpen = false">FAQ</nuxt-link>

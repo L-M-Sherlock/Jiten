@@ -18,16 +18,19 @@
   const showEditDialog = ref(false);
   const downloadDeck = ref<StudyDeckDto | undefined>(undefined);
   const showDownloadDialog = ref(false);
-  const loading = ref(true);
+  const decksLoading = ref(!srsStore.studyDecks.length);
   const activeDeckListRef = ref<HTMLElement | null>(null);
   const inactiveDeckListRef = ref<HTMLElement | null>(null);
 
   const refreshing = ref(false);
 
   onMounted(async () => {
-    loading.value = true;
-    await Promise.all([srsStore.fetchStudyDecks(), srsStore.fetchDueSummary(), srsStore.fetchDeckStreak()]);
-    loading.value = false;
+    if (!srsStore.studyDecks.length) decksLoading.value = true;
+    await Promise.all([
+      srsStore.fetchStudyDecks().finally(() => { decksLoading.value = false; }),
+      srsStore.fetchDueSummary(),
+      srsStore.fetchDeckStreak(),
+    ]);
   });
 
   async function refresh() {
@@ -191,7 +194,7 @@
     for (let i = startOffset; i >= 0; i--) {
       const d = new Date(today);
       d.setDate(d.getDate() - i);
-      const dateStr = d.toISOString().slice(0, 10);
+      const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
       const dow = (d.getDay() + 6) % 7;
       const weekIdx = Math.floor((startOffset - i) / 7);
       days.push({ date: dateStr, count: countMap.get(dateStr) ?? 0, dow, weekIdx });
@@ -206,6 +209,23 @@
     }
     return max || 1;
   });
+
+  const miniTooltip = ref({ visible: false, text: '', x: 0, y: 0 });
+
+  function showMiniTooltip(event: MouseEvent, day: MiniDay) {
+    const d = new Date(day.date + 'T00:00:00');
+    const dateStr = d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+    miniTooltip.value = {
+      visible: true,
+      text: day.count === 0 ? `${dateStr}: No reviews` : `${dateStr}: ${day.count} reviews`,
+      x: event.clientX,
+      y: event.clientY,
+    };
+  }
+
+  function hideMiniTooltip() {
+    miniTooltip.value.visible = false;
+  }
 
   function miniIntensity(count: number): string {
     if (count <= 0) return 'bg-surface-200 dark:bg-surface-700';
@@ -241,6 +261,10 @@
           @click="startStudy"
         />
         <Button icon="pi pi-refresh" severity="secondary" :loading="refreshing" @click="refresh" />
+        <NuxtLink to="/srs/history">
+          <Button icon="pi pi-history" class="sm:!hidden" severity="secondary" />
+          <Button icon="pi pi-history" label="History" severity="secondary" class="!hidden sm:!inline-flex" />
+        </NuxtLink>
         <NuxtLink to="/settings/srs">
           <Button icon="pi pi-cog" class="sm:!hidden" severity="secondary" />
           <Button icon="pi pi-cog" label="Settings" severity="secondary" class="!hidden sm:!inline-flex" />
@@ -248,9 +272,22 @@
       </div>
     </div>
 
+    <!-- Due Summary Skeleton -->
+    <div
+      v-if="decksLoading && !srsStore.dueSummary"
+      class="mb-6 rounded-xl border border-surface-200 dark:border-surface-700 bg-surface-0 dark:bg-surface-900 shadow-sm overflow-hidden"
+    >
+      <div class="grid grid-cols-2 md:grid-cols-4 divide-x divide-surface-200 dark:divide-surface-700">
+        <div v-for="i in 4" :key="i" class="flex items-center justify-center gap-2 py-3 px-3">
+          <Skeleton width="2.5rem" height="2rem" />
+          <Skeleton width="3rem" height="0.75rem" />
+        </div>
+      </div>
+    </div>
+
     <!-- Due Summary Banner -->
     <div
-      v-if="!loading && srsStore.dueSummary && srsStore.studyDecks.length > 0"
+      v-else-if="srsStore.dueSummary && srsStore.studyDecks.length > 0"
       class="mb-6 rounded-xl border border-surface-200 dark:border-surface-700 bg-surface-0 dark:bg-surface-900 shadow-sm overflow-hidden"
     >
       <div class="grid grid-cols-2 md:grid-cols-4 divide-x divide-surface-200 dark:divide-surface-700">
@@ -304,7 +341,7 @@
 
     <!-- Streak & Mini Heatmap -->
     <div
-      v-if="!loading && srsStore.deckStreak && srsStore.deckStreak.totalReviewDays > 0 && srsStore.studyDecks.length > 0"
+      v-if="srsStore.deckStreak && srsStore.deckStreak.totalReviewDays > 0 && srsStore.studyDecks.length > 0"
       class="mb-6 rounded-xl border border-surface-200 dark:border-surface-700 bg-surface-0 dark:bg-surface-900 shadow-sm p-4"
     >
       <div class="flex flex-wrap items-center gap-x-5 gap-y-3">
@@ -340,31 +377,43 @@
               width: `${CELL}px`,
               height: `${CELL}px`,
             }"
-            :title="`${day.date}: ${day.count} reviews`"
+            @mouseenter="showMiniTooltip($event, day)"
+            @mouseleave="hideMiniTooltip"
           />
         </div>
       </div>
     </div>
 
-    <!-- Loading -->
-    <div v-if="loading" class="flex justify-center py-12">
-      <ProgressSpinner style="width: 40px; height: 40px" />
+    <!-- Deck Skeletons -->
+    <div v-if="decksLoading && !srsStore.studyDecks.length" class="flex flex-col gap-3">
+      <div
+        v-for="i in 3"
+        :key="i"
+        class="flex items-center gap-4 p-4 bg-surface-0 dark:bg-surface-900 rounded-xl shadow-sm border border-surface-200 dark:border-surface-700"
+      >
+        <Skeleton width="64px" height="80px" borderRadius="4px" />
+        <div class="flex-1">
+          <Skeleton width="60%" height="1.2rem" class="mb-2" />
+          <Skeleton width="40%" height="0.9rem" class="mb-3" />
+          <Skeleton width="100%" height="1.5rem" borderRadius="8px" />
+        </div>
+      </div>
     </div>
 
     <!-- Error state -->
-    <div v-else-if="srsStore.fetchError" class="text-center py-16">
+    <div v-else-if="!decksLoading && srsStore.fetchError" class="text-center py-16">
       <div class="text-red-400 text-lg mb-4">{{ srsStore.fetchError }}</div>
       <Button icon="pi pi-refresh" label="Retry" @click="srsStore.fetchStudyDecks()" />
     </div>
 
     <!-- Empty state -->
-    <div v-else-if="srsStore.studyDecks.length === 0" class="text-center py-16">
+    <div v-else-if="!decksLoading && srsStore.studyDecks.length === 0" class="text-center py-16">
       <div class="text-gray-400 text-lg mb-4">No study decks yet</div>
       <p class="text-gray-500 mb-6">Add decks to start learning vocabulary with spaced repetition.</p>
       <Button icon="pi pi-plus" label="Add Your First Deck" @click="showAddDialog = true" />
     </div>
 
-    <template v-else>
+    <template v-else-if="srsStore.studyDecks.length > 0">
       <!-- Usage -->
       <div class="flex items-center gap-1 mb-3 text-xs">
         <Tooltip content="Current usage of your study deck limits.<br>Word counts are from word list decks only.<br>These limits are subject to change." placement="bottom">
@@ -458,59 +507,72 @@
             </div>
 
             <!-- Actions -->
-            <div class="flex gap-1 flex-shrink-0">
+            <div class="flex gap-1 flex-shrink-0 items-center">
               <div v-if="srsStore.activeDecks.length > 1" class="flex flex-col">
-                <Button
-                  icon="pi pi-chevron-up"
-                  text
-                  size="small"
-                  :disabled="index === 0"
-                  @click="moveActiveDeck(index, -1)"
-                />
-                <Button
-                  icon="pi pi-chevron-down"
-                  text
-                  size="small"
-                  :disabled="index === srsStore.activeDecks.length - 1"
-                  @click="moveActiveDeck(index, 1)"
-                />
+                <Tooltip content="Move up" placement="top">
+                  <Button
+                    icon="pi pi-chevron-up"
+                    text
+                    size="small"
+                    :disabled="index === 0"
+                    @click="moveActiveDeck(index, -1)"
+                  />
+                </Tooltip>
+                <Tooltip content="Move down" placement="top">
+                  <Button
+                    icon="pi pi-chevron-down"
+                    text
+                    size="small"
+                    :disabled="index === srsStore.activeDecks.length - 1"
+                    @click="moveActiveDeck(index, 1)"
+                  />
+                </Tooltip>
               </div>
-              <Button
-                icon="pi pi-pause"
-                v-tooltip.top="'Deactivate'"
-                severity="secondary"
-                text
-                size="small"
-                @click="srsStore.toggleDeckActive(deck.userStudyDeckId)"
-              />
-              <Button
-                icon="pi pi-eye"
-                severity="secondary"
-                text
-                size="small"
-                @click="router.push(`/srs/decks/${deck.userStudyDeckId}/vocabulary`)"
-              />
-              <Button
-                icon="pi pi-pencil"
-                severity="secondary"
-                text
-                size="small"
-                @click="openEdit(deck)"
-              />
-              <Button
-                icon="pi pi-download"
-                severity="secondary"
-                text
-                size="small"
-                @click="openDownload(deck)"
-              />
-              <Button
-                icon="pi pi-trash"
-                severity="danger"
-                text
-                size="small"
-                @click="confirmRemove(deck.userStudyDeckId, deck.deckType === 0 ? deck.title : deck.name)"
-              />
+              <Tooltip content="Deactivate" placement="top">
+                <Button
+                  icon="pi pi-pause"
+                  severity="secondary"
+                  text
+                  size="small"
+                  @click="srsStore.toggleDeckActive(deck.userStudyDeckId)"
+                />
+              </Tooltip>
+              <Tooltip content="Vocabulary" placement="top">
+                <Button
+                  icon="pi pi-eye"
+                  severity="secondary"
+                  text
+                  size="small"
+                  @click="router.push(`/srs/decks/${deck.userStudyDeckId}/vocabulary`)"
+                />
+              </Tooltip>
+              <Tooltip content="Edit" placement="top">
+                <Button
+                  icon="pi pi-pencil"
+                  severity="secondary"
+                  text
+                  size="small"
+                  @click="openEdit(deck)"
+                />
+              </Tooltip>
+              <Tooltip content="Download" placement="top">
+                <Button
+                  icon="pi pi-download"
+                  severity="secondary"
+                  text
+                  size="small"
+                  @click="openDownload(deck)"
+                />
+              </Tooltip>
+              <Tooltip content="Remove" placement="top">
+                <Button
+                  icon="pi pi-trash"
+                  severity="danger"
+                  text
+                  size="small"
+                  @click="confirmRemove(deck.userStudyDeckId, deck.deckType === 0 ? deck.title : deck.name)"
+                />
+              </Tooltip>
             </div>
           </div>
         </div>
@@ -600,59 +662,72 @@
             </div>
 
             <!-- Actions -->
-            <div class="flex gap-1 flex-shrink-0">
+            <div class="flex gap-1 flex-shrink-0 items-center">
               <div v-if="srsStore.inactiveDecks.length > 1" class="flex flex-col">
-                <Button
-                  icon="pi pi-chevron-up"
-                  text
-                  size="small"
-                  :disabled="index === 0"
-                  @click="moveInactiveDeck(index, -1)"
-                />
-                <Button
-                  icon="pi pi-chevron-down"
-                  text
-                  size="small"
-                  :disabled="index === srsStore.inactiveDecks.length - 1"
-                  @click="moveInactiveDeck(index, 1)"
-                />
+                <Tooltip content="Move up" placement="top">
+                  <Button
+                    icon="pi pi-chevron-up"
+                    text
+                    size="small"
+                    :disabled="index === 0"
+                    @click="moveInactiveDeck(index, -1)"
+                  />
+                </Tooltip>
+                <Tooltip content="Move down" placement="top">
+                  <Button
+                    icon="pi pi-chevron-down"
+                    text
+                    size="small"
+                    :disabled="index === srsStore.inactiveDecks.length - 1"
+                    @click="moveInactiveDeck(index, 1)"
+                  />
+                </Tooltip>
               </div>
-              <Button
-                icon="pi pi-play"
-                v-tooltip.top="'Activate'"
-                severity="success"
-                text
-                size="small"
-                @click="srsStore.toggleDeckActive(deck.userStudyDeckId)"
-              />
-              <Button
-                icon="pi pi-eye"
-                severity="secondary"
-                text
-                size="small"
-                @click="router.push(`/srs/decks/${deck.userStudyDeckId}/vocabulary`)"
-              />
-              <Button
-                icon="pi pi-pencil"
-                severity="secondary"
-                text
-                size="small"
-                @click="openEdit(deck)"
-              />
-              <Button
-                icon="pi pi-download"
-                severity="secondary"
-                text
-                size="small"
-                @click="openDownload(deck)"
-              />
-              <Button
-                icon="pi pi-trash"
-                severity="danger"
-                text
-                size="small"
-                @click="confirmRemove(deck.userStudyDeckId, deck.deckType === 0 ? deck.title : deck.name)"
-              />
+              <Tooltip content="Activate" placement="top">
+                <Button
+                  icon="pi pi-play"
+                  severity="success"
+                  text
+                  size="small"
+                  @click="srsStore.toggleDeckActive(deck.userStudyDeckId)"
+                />
+              </Tooltip>
+              <Tooltip content="Vocabulary" placement="top">
+                <Button
+                  icon="pi pi-eye"
+                  severity="secondary"
+                  text
+                  size="small"
+                  @click="router.push(`/srs/decks/${deck.userStudyDeckId}/vocabulary`)"
+                />
+              </Tooltip>
+              <Tooltip content="Edit" placement="top">
+                <Button
+                  icon="pi pi-pencil"
+                  severity="secondary"
+                  text
+                  size="small"
+                  @click="openEdit(deck)"
+                />
+              </Tooltip>
+              <Tooltip content="Download" placement="top">
+                <Button
+                  icon="pi pi-download"
+                  severity="secondary"
+                  text
+                  size="small"
+                  @click="openDownload(deck)"
+                />
+              </Tooltip>
+              <Tooltip content="Remove" placement="top">
+                <Button
+                  icon="pi pi-trash"
+                  severity="danger"
+                  text
+                  size="small"
+                  @click="confirmRemove(deck.userStudyDeckId, deck.deckType === 0 ? deck.title : deck.name)"
+                />
+              </Tooltip>
             </div>
           </div>
         </div>
@@ -662,5 +737,15 @@
     <SrsAddDeckDialog v-model:visible="showAddDialog" />
     <SrsAddDeckDialog v-model:visible="showEditDialog" :edit-deck="editingDeck" />
     <MediaDeckDownloadDialog v-if="downloadDeck" v-model:visible="showDownloadDialog" :study-deck="downloadDeck" />
+
+    <Teleport to="body">
+      <div
+        v-if="miniTooltip.visible"
+        class="fixed z-50 px-2.5 py-1.5 rounded-md text-xs font-medium bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900 shadow-lg pointer-events-none whitespace-nowrap"
+        :style="{ left: `${miniTooltip.x + 12}px`, top: `${miniTooltip.y - 32}px` }"
+      >
+        {{ miniTooltip.text }}
+      </div>
+    </Teleport>
   </div>
 </template>

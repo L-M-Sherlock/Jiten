@@ -81,6 +81,7 @@
   };
 
   const deckOp = ref();
+  const loadingDecks = ref(false);
 
   const onPlusClick = async (e: MouseEvent) => {
     if (e.ctrlKey) blacklistWord();
@@ -89,8 +90,12 @@
   };
 
   const onDeckMenuClick = async (e: MouseEvent) => {
-    if (srsStore.studyDecks.length === 0) await srsStore.fetchStudyDecks();
     deckOp.value?.toggle(e);
+    if (srsStore.studyDecks.length === 0) {
+      loadingDecks.value = true;
+      await srsStore.fetchStudyDecks();
+      loadingDecks.value = false;
+    }
   };
 
   const removeWord = async () => {
@@ -146,7 +151,10 @@
         <Popover ref="deckOp" :pt="{ content: { class: 'p-1' } }">
           <div class="flex flex-col">
             <span class="px-3 py-1 text-xs font-semibold text-surface-400 uppercase tracking-wide">Add to deck</span>
-            <template v-if="staticDecks.length > 0">
+            <div v-if="loadingDecks" class="flex justify-center py-2">
+              <i class="pi pi-spin pi-spinner text-surface-400" />
+            </div>
+            <template v-else-if="staticDecks.length > 0">
               <button
                 v-for="deck in staticDecks"
                 :key="deck.userStudyDeckId"
@@ -160,6 +168,15 @@
               </button>
             </template>
             <span v-else class="px-3 py-1.5 text-sm text-surface-400 italic">No word list decks</span>
+            <div class="border-t border-surface-200 dark:border-surface-700 my-1" />
+            <NuxtLink
+              :to="`/vocabulary/${word.wordId}/${word.mainReading.readingIndex}/reviews`"
+              class="flex items-center gap-2 rounded-md px-3 py-1.5 text-sm text-surface-700 dark:text-surface-300 hover:bg-surface-100 dark:hover:bg-surface-700 cursor-pointer w-full"
+              @click="deckOp?.hide()"
+            >
+              <i class="pi pi-history w-4 text-center" />
+              <span>Review history</span>
+            </NuxtLink>
           </div>
         </Popover>
         <span aria-hidden="true">|</span>

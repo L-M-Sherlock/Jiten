@@ -900,6 +900,32 @@ export interface HeatmapDay {
   correctCount: number;
 }
 
+export interface ReviewHistoryDto {
+  card?: {
+    state: FsrsState;
+    stability?: number;
+    difficulty?: number;
+    due: string;
+    lastReview?: string;
+    createdAt: string;
+  };
+  reviews: {
+    rating: FsrsRating;
+    reviewDateTime: string;
+    reviewDuration?: number;
+  }[];
+}
+
+export interface RecentReviewDto {
+  wordId: number;
+  readingIndex: number;
+  wordText: string;
+  rating: FsrsRating;
+  reviewDateTime: string;
+  reviewDuration?: number;
+  cardState: FsrsState;
+}
+
 export interface AddStudyDeckRequest {
   deckType: StudyDeckType;
   name?: string;

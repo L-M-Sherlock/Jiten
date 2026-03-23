@@ -198,6 +198,100 @@ public class SrsController(
         return Results.Json(resultObj);
     }
 
+    [HttpGet("review-history/{wordId}/{readingIndex}")]
+    [SwaggerOperation(Summary = "Get review history for a word")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public async Task<IResult> GetReviewHistory(int wordId, byte readingIndex)
+    {
+        var userId = currentUserService.UserId;
+        if (userId == null) return Results.Unauthorized();
+
+        var card = await userContext.FsrsCards
+            .Include(c => c.ReviewLogs)
+            .AsNoTracking()
+            .FirstOrDefaultAsync(c => c.UserId == userId
+                                      && c.WordId == wordId
+                                      && c.ReadingIndex == readingIndex);
+
+        if (card == null)
+            return Results.Ok(new ReviewHistoryDto());
+
+        return Results.Ok(new ReviewHistoryDto
+        {
+            Card = new CardStateDto
+            {
+                State = (int)card.State,
+                Stability = card.Stability,
+                Difficulty = card.Difficulty,
+                Due = card.Due,
+                LastReview = card.LastReview,
+                CreatedAt = card.CreatedAt,
+            },
+            Reviews = card.ReviewLogs
+                .OrderByDescending(l => l.ReviewDateTime)
+                .Select(l => new ReviewLogDto
+                {
+                    Rating = (int)l.Rating,
+                    ReviewDateTime = l.ReviewDateTime,
+                    ReviewDuration = l.ReviewDuration,
+                })
+                .ToList()
+        });
+    }
+
+    [HttpGet("review-history")]
+    [SwaggerOperation(Summary = "Get paginated review history across all cards")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public async Task<IResult> GetRecentReviews([FromQuery] int offset = 0, [FromQuery] int limit = 100)
+    {
+        var userId = currentUserService.UserId;
+        if (userId == null) return Results.Unauthorized();
+
+        offset = Math.Max(0, offset);
+        limit = Math.Clamp(limit, 1, 100);
+
+        var totalCount = await userContext.FsrsReviewLogs
+            .Where(l => l.Card.UserId == userId)
+            .CountAsync();
+
+        var logs = await userContext.FsrsReviewLogs
+            .AsNoTracking()
+            .Where(l => l.Card.UserId == userId)
+            .OrderByDescending(l => l.ReviewDateTime)
+            .Skip(offset)
+            .Take(limit)
+            .Select(l => new
+            {
+                l.Card.WordId,
+                l.Card.ReadingIndex,
+                l.Rating,
+                l.ReviewDateTime,
+                l.ReviewDuration,
+                CardState = (int)l.Card.State
+            })
+            .ToListAsync();
+
+        var wordIds = logs.Select(l => l.WordId).Distinct().ToList();
+        var formDict = await WordFormHelper.LoadWordForms(context, wordIds);
+
+        var reviews = logs.Select(l =>
+        {
+            var form = formDict.GetValueOrDefault((l.WordId, l.ReadingIndex));
+            return new RecentReviewDto
+            {
+                WordId = l.WordId,
+                ReadingIndex = l.ReadingIndex,
+                WordText = form?.RubyText ?? form?.Text ?? "",
+                Rating = (int)l.Rating,
+                ReviewDateTime = l.ReviewDateTime,
+                ReviewDuration = l.ReviewDuration,
+                CardState = l.CardState
+            };
+        }).ToList();
+
+        return Results.Ok(new PaginatedResponse<List<RecentReviewDto>>(reviews, totalCount, limit, offset));
+    }
+
     [HttpGet("settings")]
     [SwaggerOperation(Summary = "Get FSRS settings",
                       Description = "Get the user's FSRS settings.")]

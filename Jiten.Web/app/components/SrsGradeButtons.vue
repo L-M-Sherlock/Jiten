@@ -65,23 +65,7 @@
 
 <template>
   <div class="flex flex-col gap-2 sm:gap-3 w-full mx-auto">
-    <!-- Flip button when not flipped -->
-    <div v-if="!isFlipped" class="flex justify-center">
-      <Button
-        label="Show Answer"
-        severity="secondary"
-        class="w-full min-h-[44px] md:min-h-[72px] text-lg"
-        :class="{ 'kb-pressed': props.pressedKey === 'space' }"
-        @click="emit('flip')"
-      >
-        <template #default>
-          <span>Show Answer</span>
-          <span v-if="showKeybinds" class="keybind ml-2 text-xs opacity-60">Space</span>
-        </template>
-      </Button>
-    </div>
-
-    <!-- Undo (visible below Show Answer without flipping) -->
+    <!-- Undo (before flip) -->
     <div v-if="!isFlipped && canUndo" class="flex justify-center">
       <Button
         severity="secondary"
@@ -99,6 +83,22 @@
             <span class="text-[10px] sm:text-sm sm:leading-normal">Undo</span>
             <span v-if="showKeybinds" class="keybind ml-1 text-xs opacity-60 hidden sm:inline">Z</span>
           </div>
+        </template>
+      </Button>
+    </div>
+
+    <!-- Flip button when not flipped -->
+    <div v-if="!isFlipped" class="flex justify-center">
+      <Button
+        label="Show Answer"
+        severity="secondary"
+        class="w-full min-h-[44px] md:min-h-[72px] text-lg"
+        :class="{ 'kb-pressed': props.pressedKey === 'space' }"
+        @click="emit('flip')"
+      >
+        <template #default>
+          <span>Show Answer</span>
+          <span v-if="showKeybinds" class="keybind ml-2 text-xs opacity-60">Space</span>
         </template>
       </Button>
     </div>
@@ -163,6 +163,26 @@
             <Icon name="material-symbols:star" size="16" />
             <span class="text-[10px] sm:text-sm sm:leading-normal">Master</span>
             <span v-if="showKeybinds" class="keybind ml-1 text-xs opacity-60 hidden sm:inline">M</span>
+          </div>
+        </template>
+      </Button>
+      <!-- Undo -->
+      <Button
+        v-if="canUndo"
+        severity="secondary"
+        size="small"
+        outlined
+        :disabled="props.disabled"
+        class="min-h-[36px] !px-2 sm:!px-3"
+        :class="{ 'kb-pressed': props.pressedKey === 'z' }"
+        aria-label="Undo"
+        @click="emit('undo')"
+      >
+        <template #default>
+          <div class="flex flex-col items-center sm:flex-row sm:gap-1.5">
+            <Icon name="material-symbols:undo" size="16" />
+            <span class="text-[10px] sm:text-sm sm:leading-normal">Undo</span>
+            <span v-if="showKeybinds" class="keybind ml-1 text-xs opacity-60 hidden sm:inline">Z</span>
           </div>
         </template>
       </Button>

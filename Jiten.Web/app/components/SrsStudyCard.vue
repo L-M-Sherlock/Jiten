@@ -176,6 +176,15 @@
             <i class="pi pi-external-link text-xs" />
             Open vocabulary page
           </NuxtLink>
+          <NuxtLink
+            :to="`/vocabulary/${card.wordId}/${card.readingIndex}/reviews`"
+            target="_blank"
+            class="flex items-center gap-2 px-3 py-2 text-sm hover:bg-surface-100 dark:hover:bg-surface-700 transition-colors"
+            @click="showMenu = false"
+          >
+            <i class="pi pi-history text-xs" />
+            Review history
+          </NuxtLink>
         </div>
       </div>
 

@@ -286,6 +286,7 @@ public class StudyController(
         userContext.UserStudyDecks.Add(studyDeck);
         await userContext.SaveChangesAsync();
 
+
         logger.LogInformation("User added study deck: DeckType={DeckType}, DeckId={DeckId}", request.DeckType, request.DeckId);
         return Results.Ok(new { studyDeck.UserStudyDeckId });
     }
@@ -339,6 +340,7 @@ public class StudyController(
         }
 
         await userContext.SaveChangesAsync();
+
         return Results.Ok(new { success = true });
     }
 
@@ -355,6 +357,7 @@ public class StudyController(
 
         userContext.UserStudyDecks.Remove(studyDeck);
         await userContext.SaveChangesAsync();
+
 
         logger.LogInformation("User removed study deck: UserStudyDeckId={UserStudyDeckId}", studyDeck.UserStudyDeckId);
         return Results.Ok(new { success = true });
@@ -396,6 +399,7 @@ public class StudyController(
         }
 
         await userContext.SaveChangesAsync();
+
         return Results.Ok(new { success = true });
     }
 
@@ -424,6 +428,7 @@ public class StudyController(
             existing.Occurrences += Math.Max(1, request.Occurrences);
             await userContext.SaveChangesAsync();
             await transaction.CommitAsync();
+    
             return Results.Ok(new { success = true });
         }
 
@@ -441,6 +446,7 @@ public class StudyController(
         });
         await userContext.SaveChangesAsync();
         await transaction.CommitAsync();
+
 
         return Results.Ok(new { success = true });
     }
@@ -543,6 +549,7 @@ public class StudyController(
 
         userContext.UserStudyDeckWords.Remove(word);
         await userContext.SaveChangesAsync();
+
 
         return Results.Ok(new { success = true });
     }
@@ -998,6 +1005,7 @@ public class StudyController(
 
         var result = await importService.CommitImport(userId, request);
         if (result.Error != null) return Results.BadRequest(result.Error);
+
 
         return Results.Ok(new { userStudyDeckId = result.DeckId });
     }
@@ -1598,6 +1606,53 @@ public class StudyController(
         });
     }
 
+    [HttpGet("enrolled")]
+    [SwaggerOperation(Summary = "Check if user has enrolled in SRS preview")]
+    public async Task<IResult> GetEnrolled()
+    {
+        var userId = currentUserService.UserId;
+        if (userId == null) return Results.Unauthorized();
+
+        var fsrsSettings = await userContext.UserFsrsSettings
+            .AsNoTracking()
+            .FirstOrDefaultAsync(s => s.UserId == userId);
+
+        var enrolled = fsrsSettings != null
+            && !string.IsNullOrEmpty(fsrsSettings.SettingsJson)
+            && fsrsSettings.SettingsJson != "{}";
+
+        return Results.Ok(new { enrolled });
+    }
+
+    [HttpPost("enroll")]
+    [SwaggerOperation(Summary = "Enroll in SRS preview by creating default settings")]
+    public async Task<IResult> Enroll()
+    {
+        var userId = currentUserService.UserId;
+        if (userId == null) return Results.Unauthorized();
+
+        var fsrsSettings = await userContext.UserFsrsSettings
+            .FirstOrDefaultAsync(s => s.UserId == userId);
+
+        if (fsrsSettings != null
+            && !string.IsNullOrEmpty(fsrsSettings.SettingsJson)
+            && fsrsSettings.SettingsJson != "{}")
+        {
+            return Results.Ok(new { enrolled = true });
+        }
+
+        if (fsrsSettings == null)
+        {
+            fsrsSettings = new UserFsrsSettings { UserId = userId };
+            userContext.UserFsrsSettings.Add(fsrsSettings);
+        }
+
+        fsrsSettings.SettingsJson = JsonSerializer.Serialize(new StudySettingsDto());
+        await userContext.SaveChangesAsync();
+
+        return Results.Ok(new { enrolled = true });
+    }
+
     [HttpGet("study-settings")]
     [SwaggerOperation(Summary = "Get study experience settings")]
     public async Task<IResult> GetStudySettings()
@@ -2080,34 +2135,53 @@ public class StudyController(
 
         var isNpgsql = context.Database.ProviderName?.Contains("Npgsql") == true;
 
-        List<int> exampleIds;
+        List<int> studyExampleIds;
+        List<int> fallbackExampleIds;
         if (isNpgsql)
         {
-            exampleIds = await context.Database
-                .SqlQueryRaw<int>(@"
-                    SELECT ex.""ExampleSentenceId""
-                    FROM unnest({0}::int[], {1}::smallint[]) AS v(wid, ri)
-                    CROSS JOIN LATERAL (
-                        (SELECT esw.""ExampleSentenceId""
-                         FROM jiten.""ExampleSentenceWords"" esw
-                         WHERE esw.""WordId"" = v.wid AND esw.""ReadingIndex"" = v.ri
-                           AND esw.""ExampleSentenceId"" IN (
-                               SELECT ""SentenceId"" FROM jiten.""ExampleSentences"" WHERE ""DeckId"" = ANY({2})
-                           )
-                         ORDER BY esw.""ExampleSentenceId"" LIMIT 1)
-                        UNION ALL
-                        (SELECT esw.""ExampleSentenceId""
-                         FROM jiten.""ExampleSentenceWords"" esw
-                         WHERE esw.""WordId"" = v.wid AND esw.""ReadingIndex"" = v.ri
-                         ORDER BY esw.""ExampleSentenceId"" LIMIT 1)
-                        LIMIT 1
-                    ) AS ex
-                ", pairWordIds, pairReadingIndexes, studyDeckIdArray)
-                .ToListAsync();
+            studyExampleIds = studyDeckIdArray.Length > 0
+                ? await context.Database
+                    .SqlQueryRaw<int>(@"
+                        SELECT esw.""ExampleSentenceId""
+                        FROM unnest({0}::int[], {1}::smallint[]) AS v(wid, ri)
+                        CROSS JOIN LATERAL (
+                            SELECT esw2.""ExampleSentenceId""
+                            FROM jiten.""ExampleSentenceWords"" esw2
+                            JOIN jiten.""ExampleSentences"" es ON es.""SentenceId"" = esw2.""ExampleSentenceId""
+                            WHERE esw2.""WordId"" = v.wid AND esw2.""ReadingIndex"" = v.ri
+                              AND es.""DeckId"" = ANY({2})
+                            LIMIT 1
+                        ) esw
+                    ", pairWordIds, pairReadingIndexes, studyDeckIdArray)
+                    .ToListAsync()
+                : [];
+
+            if (studyExampleIds.Count >= request.Pairs.Count)
+            {
+                fallbackExampleIds = [];
+            }
+            else
+            {
+                fallbackExampleIds = await context.Database
+                    .SqlQueryRaw<int>(@"
+                        SELECT esw.""ExampleSentenceId""
+                        FROM unnest({0}::int[], {1}::smallint[]) AS v(wid, ri)
+                        CROSS JOIN LATERAL (
+                            SELECT esw2.""ExampleSentenceId""
+                            FROM jiten.""ExampleSentenceWords"" esw2
+                            WHERE esw2.""WordId"" = v.wid AND esw2.""ReadingIndex"" = v.ri
+                            ORDER BY esw2.""ExampleSentenceId""
+                            LIMIT 1
+                        ) esw
+                    ", pairWordIds, pairReadingIndexes)
+                    .ToListAsync();
+
+            }
         }
         else
         {
-            exampleIds = await context.ExampleSentenceWords
+            studyExampleIds = [];
+            fallbackExampleIds = await context.ExampleSentenceWords
                 .AsNoTracking()
                 .Where(esw => wordIds.Contains(esw.WordId))
                 .GroupBy(esw => new { esw.WordId, esw.ReadingIndex })
@@ -2115,20 +2189,24 @@ public class StudyController(
                 .ToListAsync();
         }
 
+        var exampleIds = studyExampleIds.Union(fallbackExampleIds).Distinct().ToList();
+
         if (exampleIds.Count == 0)
             return Results.Ok(new CardExamplesResponse());
 
-        var examples = await context.ExampleSentenceWords
+        var sentences = await context.ExampleSentences
             .AsNoTracking()
-            .Include(esw => esw.ExampleSentence)
+            .Where(es => exampleIds.Contains(es.SentenceId))
+            .ToDictionaryAsync(es => es.SentenceId);
+
+        var exampleWords = await context.ExampleSentenceWords
+            .AsNoTracking()
             .Where(esw => exampleIds.Contains(esw.ExampleSentenceId)
                         && wordIds.Contains(esw.WordId))
             .ToListAsync();
 
-        var exampleDeckIds = examples
-            .Where(esw => esw.ExampleSentence != null)
-            .Select(esw => esw.ExampleSentence!.DeckId)
-            .Distinct().ToList();
+
+        var exampleDeckIds = sentences.Values.Select(s => s.DeckId).Distinct().ToList();
         var exampleDecks = exampleDeckIds.Count > 0
             ? await context.Decks.AsNoTracking()
                 .Where(d => exampleDeckIds.Contains(d.DeckId))
@@ -2146,12 +2224,14 @@ public class StudyController(
                 .ToDictionaryAsync(d => d.DeckId)
             : new();
 
+
+        var studyIdSet = studyExampleIds.ToHashSet();
         var result = new Dictionary<string, StudyExampleSentenceDto>();
-        foreach (var esw in examples)
+        foreach (var esw in exampleWords.OrderByDescending(e => studyIdSet.Contains(e.ExampleSentenceId)))
         {
-            if (esw.ExampleSentence == null) continue;
+            if (!sentences.TryGetValue(esw.ExampleSentenceId, out var sentence)) continue;
             var key = $"{esw.WordId}-{esw.ReadingIndex}";
-            result.TryAdd(key, BuildStudyExampleSentence(esw, exampleDecks, exampleParentDecks));
+            result.TryAdd(key, BuildStudyExampleSentence(esw, sentence, exampleDecks, exampleParentDecks));
         }
 
         return Results.Ok(new CardExamplesResponse { Examples = result });
@@ -2161,17 +2241,18 @@ public class StudyController(
 
     private static StudyExampleSentenceDto BuildStudyExampleSentence(
         ExampleSentenceWord exWord,
+        ExampleSentence sentence,
         Dictionary<int, DeckProjection> decks,
         Dictionary<int, DeckProjection> parentDecks)
     {
         var dto = new StudyExampleSentenceDto
         {
-            Text = exWord.ExampleSentence!.Text,
+            Text = sentence.Text,
             WordPosition = exWord.Position,
             WordLength = exWord.Length
         };
 
-        if (decks.TryGetValue(exWord.ExampleSentence.DeckId, out var deck))
+        if (decks.TryGetValue(sentence.DeckId, out var deck))
         {
             dto.SourceDeck = new StudyExampleSourceDto
             {
@@ -2558,12 +2639,6 @@ public class StudyController(
 
     private async Task<string?> ValidateWordLimits(string userId, int deckId, int wordsToAdd)
     {
-        var wordCount = await userContext.UserStudyDeckWords.CountAsync(w => w.UserStudyDeckId == deckId);
-        if (wordCount + wordsToAdd > 50_000)
-            return wordsToAdd == 1
-                ? "Maximum of 50,000 words per deck reached."
-                : $"Adding {wordsToAdd} words would exceed the 50,000 per-deck limit.";
-
         var userDeckIds = await userContext.UserStudyDecks
             .Where(sd => sd.UserId == userId)
             .Select(sd => sd.UserStudyDeckId)

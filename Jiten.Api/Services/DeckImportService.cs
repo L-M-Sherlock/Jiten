@@ -307,10 +307,6 @@ public partial class DeckImportService(
                             .Select(g => g.First())
                             .ToList();
 
-        var wordCount = await userContext.UserStudyDeckWords.CountAsync(w => w.UserStudyDeckId == deckId);
-        if (wordCount + wordsToImport.Count > 50_000)
-            return new(null, $"Adding {wordsToImport.Count} words would exceed the 50,000 per-deck limit.");
-
         var userDeckIds = await userContext.UserStudyDecks
                                            .Where(sd => sd.UserId == userId)
                                            .Select(sd => sd.UserStudyDeckId)
