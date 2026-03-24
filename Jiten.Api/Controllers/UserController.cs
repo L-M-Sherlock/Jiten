@@ -246,14 +246,16 @@ public class UserController(
         var userId = userService.UserId;
         if (string.IsNullOrEmpty(userId)) return Results.Unauthorized();
 
-        if (request.WordIds == null || request.WordIds.Count == 0) return Results.BadRequest("No word IDs provided");
+        var knownIds = (request.WordIds ?? []).Where(id => id > 0).Distinct().ToList();
+        var blacklistedIds = (request.BlacklistedWordIds ?? []).Where(id => id > 0).Distinct().ToList();
+        var suspendedIds = (request.SuspendedWordIds ?? []).Where(id => id > 0).Distinct().ToList();
 
-        var distinctIds = request.WordIds.Where(id => id > 0).Distinct().ToList();
-        if (distinctIds.Count == 0) return Results.BadRequest("No valid words found");
+        var allIds = knownIds.Union(blacklistedIds).Union(suspendedIds).ToList();
+        if (allIds.Count == 0) return Results.BadRequest("No word IDs provided");
 
         var jmdictWords = await jitenContext.JMDictWords
                                             .AsNoTracking()
-                                            .Where(w => distinctIds.Contains(w.WordId))
+                                            .Where(w => allIds.Contains(w.WordId))
                                             .ToListAsync();
 
         if (jmdictWords.Count == 0) return Results.BadRequest("Invalid words provided");
@@ -275,11 +277,17 @@ public class UserController(
 
         List<FsrsCard> toInsert = new();
         var alreadyKnownSet = alreadyKnown.Select(uk => (uk.WordId, (int)uk.ReadingIndex)).ToHashSet();
+        var blacklistedSet = blacklistedIds.ToHashSet();
+        var suspendedSet = suspendedIds.ToHashSet();
 
         foreach (var word in jmdictWords)
         {
             var wordFormFreqs = formFreqsByWord.GetValueOrDefault(word.WordId);
             var readingIndicesToImport = GetReadingIndicesToImport(wordFormFreqs, request.FrequencyThreshold);
+
+            var state = blacklistedSet.Contains(word.WordId) ? FsrsState.Blacklisted
+                      : suspendedSet.Contains(word.WordId)   ? FsrsState.Suspended
+                      : FsrsState.Mastered;
 
             foreach (var i in readingIndicesToImport)
             {
@@ -287,7 +295,7 @@ public class UserController(
                     continue;
 
                 toInsert.Add(new FsrsCard(userId, word.WordId, (byte)i, due: DateTime.UtcNow, lastReview: DateTime.UtcNow,
-                                          state: FsrsState.Mastered));
+                                          state: state));
             }
         }
 
@@ -343,6 +351,176 @@ public class UserController(
         }
 
         return result;
+    }
+
+    [HttpPost("vocabulary/import-jpdb-reviews")]
+    public async Task<IResult> ImportJpdbReviews([FromBody] ImportJpdbReviewsRequest request)
+    {
+        var userId = userService.UserId;
+        if (string.IsNullOrEmpty(userId)) return Results.Unauthorized();
+
+        if (request.Cards == null || request.Cards.Count == 0)
+            return Results.BadRequest("No cards provided");
+
+        var distinctWordIds = request.Cards.Select(c => c.WordId).Distinct().ToList();
+
+        var wordForms = await jitenContext.WordForms
+                                          .AsNoTracking()
+                                          .Where(wf => distinctWordIds.Contains(wf.WordId))
+                                          .ToListAsync();
+
+        var formsByWord = wordForms.GroupBy(wf => wf.WordId)
+                                   .ToDictionary(g => g.Key, g => g.ToList());
+
+        var existingCards = await userContext.FsrsCards
+                                             .Where(c => c.UserId == userId && distinctWordIds.Contains(c.WordId))
+                                             .ToDictionaryAsync(c => (c.WordId, (int)c.ReadingIndex));
+
+        var existingCardIds = existingCards.Values.Select(c => c.CardId).ToList();
+        var existingLogTimestamps = await userContext.FsrsReviewLogs
+                                                     .AsNoTracking()
+                                                     .Where(l => existingCardIds.Contains(l.CardId))
+                                                     .Select(l => new { l.CardId, l.ReviewDateTime })
+                                                     .ToListAsync();
+        var existingLogSet = existingLogTimestamps.Select(l => (l.CardId, l.ReviewDateTime)).ToHashSet();
+
+        var settings = await userContext.UserFsrsSettings.AsNoTracking()
+                                        .FirstOrDefaultAsync(s => s.UserId == userId);
+        var parameters = settings?.GetParametersOnce() is { Length: > 0 } p ? p : FsrsConstants.DefaultParameters;
+        var desiredRetention = settings?.DesiredRetention is double dr and > 0 and < 1 ? dr : FsrsConstants.DefaultDesiredRetention;
+        var scheduler = new FsrsScheduler(desiredRetention: desiredRetention, parameters: parameters, enableFuzzing: false);
+
+        var cardsToAdd = new List<FsrsCard>();
+        var logsToAdd = new List<FsrsReviewLog>();
+        var cardsToReplay = new List<FsrsCard>();
+        int skipped = 0;
+
+        foreach (var jpdbCard in request.Cards)
+        {
+            if (!formsByWord.TryGetValue(jpdbCard.WordId, out var forms))
+            {
+                skipped++;
+                continue;
+            }
+
+            var validReviews = jpdbCard.Reviews
+                .Where(r => MapJpdbGrade(r.Grade) != null)
+                .OrderBy(r => r.Timestamp)
+                .ToList();
+
+            if (validReviews.Count == 0)
+            {
+                skipped++;
+                continue;
+            }
+
+            byte readingIndex = ResolveReadingIndex(forms, jpdbCard.Spelling);
+            var key = (jpdbCard.WordId, (int)readingIndex);
+
+            FsrsCard card;
+            if (existingCards.TryGetValue(key, out var existingCard))
+            {
+                card = existingCard;
+            }
+            else
+            {
+                card = new FsrsCard(userId, jpdbCard.WordId, readingIndex);
+                cardsToAdd.Add(card);
+                existingCards[key] = card;
+            }
+
+            foreach (var review in validReviews)
+            {
+                var reviewDt = DateTimeOffset.FromUnixTimeSeconds(review.Timestamp).UtcDateTime;
+                var rating = MapJpdbGrade(review.Grade)!.Value;
+
+                if (card.CardId > 0 && existingLogSet.Contains((card.CardId, reviewDt)))
+                    continue;
+
+                logsToAdd.Add(new FsrsReviewLog(card.CardId, rating, reviewDt) { Card = card });
+            }
+
+            cardsToReplay.Add(card);
+        }
+
+        if (cardsToAdd.Count > 0)
+        {
+            await userContext.FsrsCards.AddRangeAsync(cardsToAdd);
+            await userContext.SaveChangesAsync();
+        }
+
+        foreach (var log in logsToAdd)
+        {
+            log.CardId = log.Card.CardId;
+        }
+
+        if (logsToAdd.Count > 0)
+        {
+            await userContext.FsrsReviewLogs.AddRangeAsync(logsToAdd);
+            await userContext.SaveChangesAsync();
+        }
+
+        // Replay all reviews for affected cards to compute state
+        var replayCardIds = cardsToReplay.Where(c => c.CardId > 0).Select(c => c.CardId).ToList();
+        var allLogs = await userContext.FsrsReviewLogs
+                                       .AsNoTracking()
+                                       .Where(l => replayCardIds.Contains(l.CardId))
+                                       .OrderBy(l => l.ReviewDateTime)
+                                       .ThenBy(l => l.ReviewLogId)
+                                       .ToListAsync();
+        var logsByCard = allLogs.GroupBy(l => l.CardId).ToDictionary(g => g.Key, g => g.ToList());
+
+        foreach (var card in cardsToReplay)
+        {
+            if (!logsByCard.TryGetValue(card.CardId, out var cardLogs) || cardLogs.Count == 0)
+                continue;
+
+            var overrideState = card.State is FsrsState.Mastered or FsrsState.Blacklisted or FsrsState.Suspended
+                ? card.State
+                : (FsrsState?)null;
+
+            var tempCard = new FsrsCard(card.UserId, card.WordId, card.ReadingIndex);
+            foreach (var log in cardLogs)
+            {
+                var result = scheduler.ReviewCard(tempCard, log.Rating, log.ReviewDateTime);
+                tempCard = result.UpdatedCard;
+            }
+
+            card.State = overrideState ?? tempCard.State;
+            card.Step = tempCard.Step;
+            card.Stability = tempCard.Stability;
+            card.Difficulty = tempCard.Difficulty;
+            card.Due = tempCard.Due;
+            card.LastReview = tempCard.LastReview;
+        }
+
+        await userContext.SaveChangesAsync();
+
+        await CoverageDirtyHelper.MarkCoverageDirty(userContext, userId);
+        await userContext.SaveChangesAsync();
+        backgroundJobs.Enqueue<ComputationJob>(job => job.ComputeUserCoverage(userId));
+
+        logger.LogInformation("User imported JPDB reviews: UserId={UserId}, Cards={Cards}, Reviews={Reviews}, Skipped={Skipped}",
+                              userId, cardsToReplay.Count, logsToAdd.Count, skipped);
+        return Results.Ok(new { cardsProcessed = cardsToReplay.Count, reviewsImported = logsToAdd.Count, skipped });
+    }
+
+    private static FsrsRating? MapJpdbGrade(string grade) => grade switch
+    {
+        "nothing" or "unknown" => FsrsRating.Again,
+        "something" or "hard" => FsrsRating.Hard,
+        "okay" => FsrsRating.Good,
+        "easy" or "known" => FsrsRating.Easy,
+        _ => null
+    };
+
+    private static byte ResolveReadingIndex(List<JmDictWordForm> forms, string spelling)
+    {
+        var match = forms.FirstOrDefault(f => f.Text == spelling);
+        if (match != null)
+            return (byte)match.ReadingIndex;
+
+        return 0;
     }
 
     /// <summary>
