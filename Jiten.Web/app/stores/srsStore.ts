@@ -67,6 +67,7 @@ export const useSrsStore = defineStore('srs', () => {
     showNextInterval: false,
     showKeybinds: true,
     showElapsedTime: true,
+    enableSwipeGesture: true,
   });
   const sessionStats = ref({
     cardsReviewed: 0,

@@ -76,7 +76,7 @@
       <ProgressSpinner style="width: 24px; height: 24px" />
     </div>
     <div v-else class="flex flex-col gap-4">
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div :class="props.inline ? 'flex flex-col gap-4' : 'grid grid-cols-1 md:grid-cols-3 gap-4'">
         <div>
           <label class="block text-sm font-medium mb-1">
             New cards per day
@@ -214,6 +214,15 @@
             <label for="showElapsedTime" class="text-sm cursor-pointer">
               Show elapsed time
               <Tooltip content="Display a timer showing how long you've spent in the study session." placement="right">
+                <i class="pi pi-info-circle text-xs text-surface-400 ml-1 cursor-help" />
+              </Tooltip>
+            </label>
+          </div>
+          <div class="flex items-center gap-2">
+            <ToggleSwitch v-model="form.enableSwipeGesture" input-id="enableSwipeGesture" />
+            <label for="enableSwipeGesture" class="text-sm cursor-pointer">
+              Swipe to grade
+              <Tooltip content="Swipe the card left (Again) or right (Good) to grade. Works with both mouse and touch." placement="right">
                 <i class="pi pi-info-circle text-xs text-surface-400 ml-1 cursor-help" />
               </Tooltip>
             </label>

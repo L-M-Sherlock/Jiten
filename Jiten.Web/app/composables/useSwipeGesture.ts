@@ -45,6 +45,9 @@ export function useSwipeGesture(options: SwipeGestureOptions) {
     const el = options.elementRef.value;
     if (!el) return;
 
+    const target = e.target as HTMLElement | null;
+    if (target?.closest('button, a, [role="tab"], [data-pc-name="tab"], [data-pc-name="tablist"]')) return;
+
     startX = e.clientX;
     startY = e.clientY;
     rawDx = 0;
@@ -52,8 +55,9 @@ export function useSwipeGesture(options: SwipeGestureOptions) {
     scrolling = false;
     hapticFired = false;
     activePointerId = e.pointerId;
-
-    el.setPointerCapture(e.pointerId);
+    document.addEventListener('pointermove', onPointerMove);
+    document.addEventListener('pointerup', onPointerUp);
+    document.addEventListener('pointercancel', onPointerCancel);
   }
 
   function onPointerMove(e: PointerEvent) {
@@ -69,14 +73,22 @@ export function useSwipeGesture(options: SwipeGestureOptions) {
 
       if (Math.abs(dy) > Math.abs(dx)) {
         scrolling = true;
-        const el = options.elementRef.value;
-        if (el) el.releasePointerCapture(e.pointerId);
         activePointerId = null;
+        removeDocListeners();
+        return;
+      }
+
+      const sel = window.getSelection();
+      if (sel && !sel.isCollapsed) {
+        activePointerId = null;
+        removeDocListeners();
         return;
       }
 
       committed = true;
       isDragging.value = true;
+      const el = options.elementRef.value;
+      if (el) el.setPointerCapture(e.pointerId);
     }
 
     e.preventDefault();
@@ -100,9 +112,16 @@ export function useSwipeGesture(options: SwipeGestureOptions) {
     }
   }
 
+  function removeDocListeners() {
+    document.removeEventListener('pointermove', onPointerMove);
+    document.removeEventListener('pointerup', onPointerUp);
+    document.removeEventListener('pointercancel', onPointerCancel);
+  }
+
   function onPointerUp(e: PointerEvent) {
     if (e.pointerId !== activePointerId) return;
     activePointerId = null;
+    removeDocListeners();
 
     if (!committed) {
       isDragging.value = false;
@@ -121,6 +140,7 @@ export function useSwipeGesture(options: SwipeGestureOptions) {
   function onPointerCancel(e: PointerEvent) {
     if (e.pointerId !== activePointerId) return;
     activePointerId = null;
+    removeDocListeners();
     if (committed) snapBack();
     isDragging.value = false;
   }
@@ -166,28 +186,14 @@ export function useSwipeGesture(options: SwipeGestureOptions) {
   }
 
   watch(options.elementRef, (el, oldEl) => {
-    if (oldEl) {
-      oldEl.removeEventListener('pointerdown', onPointerDown);
-      oldEl.removeEventListener('pointermove', onPointerMove);
-      oldEl.removeEventListener('pointerup', onPointerUp);
-      oldEl.removeEventListener('pointercancel', onPointerCancel);
-    }
-    if (el) {
-      el.addEventListener('pointerdown', onPointerDown);
-      el.addEventListener('pointermove', onPointerMove);
-      el.addEventListener('pointerup', onPointerUp);
-      el.addEventListener('pointercancel', onPointerCancel);
-    }
+    if (oldEl) oldEl.removeEventListener('pointerdown', onPointerDown);
+    if (el) el.addEventListener('pointerdown', onPointerDown);
   });
 
   onUnmounted(() => {
     const el = options.elementRef.value;
-    if (el) {
-      el.removeEventListener('pointerdown', onPointerDown);
-      el.removeEventListener('pointermove', onPointerMove);
-      el.removeEventListener('pointerup', onPointerUp);
-      el.removeEventListener('pointercancel', onPointerCancel);
-    }
+    if (el) el.removeEventListener('pointerdown', onPointerDown);
+    removeDocListeners();
   });
 
   return {

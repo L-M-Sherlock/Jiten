@@ -50,7 +50,7 @@
 
   const swipe = useSwipeGesture({
     elementRef: swipeCardRef,
-    isEnabled: computed(() => srsStore.isFlipped),
+    isEnabled: computed(() => srsStore.isFlipped && srsStore.studySettings.enableSwipeGesture),
     isBusy: computed(() => srsStore.isBusy),
     onSwipeComplete: (dir) => {
       handleGrade(dir === 'right' ? FsrsRating.Good : FsrsRating.Again);

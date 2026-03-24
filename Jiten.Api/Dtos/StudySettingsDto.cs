@@ -76,4 +76,7 @@ public class StudySettingsDto
 
     [JsonPropertyName("showElapsedTime")]
     public bool ShowElapsedTime { get; set; } = true;
+
+    [JsonPropertyName("enableSwipeGesture")]
+    public bool EnableSwipeGesture { get; set; } = true;
 }

@@ -569,7 +569,7 @@
           <label class="block text-sm font-medium mb-1">Download Type</label>
           <Select v-model="downloadType" :options="downloadTypeOptions" option-label="label" option-value="value" class="w-full" />
         </div>
-        <div v-if="downloadType !== DeckDownloadType.Full" class="grid grid-cols-2 gap-3 mb-3">
+        <div v-if="downloadType !== DeckDownloadType.Full" class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
           <div>
             <label class="block text-xs mb-1">Min</label>
             <InputNumber v-model="minFrequency" :min="0" class="w-full" />
@@ -589,7 +589,7 @@
       </template>
 
       <template v-if="downloadMode === 'occurrence'">
-        <div class="grid grid-cols-2 gap-3 mb-3">
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
           <div>
             <label class="block text-xs mb-1">Min Occurrences</label>
             <InputNumber v-model="minOccurrences" :min="1" class="w-full" />
@@ -643,7 +643,7 @@
         <label class="block text-sm font-medium mb-1">Description <span class="text-gray-400">(optional)</span></label>
         <Textarea v-model="globalDescription" class="w-full" rows="2" :maxlength="2000" />
       </div>
-      <div class="grid grid-cols-2 gap-3 mb-3">
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
         <div>
           <label class="block text-xs mb-1">Min Frequency Rank</label>
           <InputNumber v-model="globalMinFreq" :min="1" class="w-full" />

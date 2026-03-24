@@ -52,7 +52,6 @@
   const selectedField = ref<number>(0);
   const fields = ref<Array<[string, { order: number; value: string }]>>([]);
   const overwriteExisting = ref(false);
-  const forceImportCardsWithNoReviews = ref(false);
   const parseWords = ref(false);
   const importReviewHistory = ref(true);
 
@@ -275,7 +274,6 @@
                 body: JSON.stringify({
                   cards: chunkPayload,
                   overwrite: overwriteExisting.value,
-                  forceImportCardsWithNoReviews: forceImportCardsWithNoReviews.value,
                   parseWords: parseWords.value,
                 }),
                 headers: { 'Content-Type': 'application/json' },
@@ -306,7 +304,6 @@
               body: JSON.stringify({
                 cards: chunkPayload,
                 overwrite: overwriteExisting.value,
-                forceImportCardsWithNoReviews: forceImportCardsWithNoReviews.value,
                 parseWords: parseWords.value,
               }),
               headers: { 'Content-Type': 'application/json' },
@@ -448,12 +445,6 @@
             <Checkbox v-model="overwriteExisting" inputId="overwrite" :binary="true" />
             <label for="overwrite" class="cursor-pointer">
               Overwrite existing cards (replace cards you already have with Anki versions, even if they are more recent)
-            </label>
-          </div>
-          <div class="flex items-center gap-2">
-            <Checkbox v-model="forceImportCardsWithNoReviews" inputId="forceImportCardsWithNoReviews" :binary="true" />
-            <label for="forceImportCardsWithNoReviews" class="cursor-pointer">
-              Force import cards with no reviews (import cards even if they have no reviews in Anki, not recommended)
             </label>
           </div>
           <div class="flex items-center gap-2">

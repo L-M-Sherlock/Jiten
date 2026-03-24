@@ -850,6 +850,7 @@ export interface StudySettingsDto {
   showNextInterval: boolean;
   showKeybinds: boolean;
   showElapsedTime: boolean;
+  enableSwipeGesture: boolean;
 }
 
 export interface CardExamplesResponse {

@@ -426,17 +426,14 @@ public class UserController(
         List<string> skippedWordsNoReviews = new List<string>();
         int skippedCountNoReviews = 0;
 
-        if (!request.ForceImportCardsWithNoReviews)
+        for (int i = request.Cards.Count - 1; i >= 0; i--)
         {
-            for (int i = request.Cards.Count - 1; i >= 0; i--)
-            {
-                if (request.Cards[i].Card.LastReview != null)
-                    continue;
+            if (request.Cards[i].Card.LastReview != null)
+                continue;
 
-                skippedWordsNoReviews.Add(new string(request.Cards[i].Card.Word));
-                request.Cards.RemoveAt(i);
-                skippedCountNoReviews++;
-            }
+            skippedWordsNoReviews.Add(new string(request.Cards[i].Card.Word));
+            request.Cards.RemoveAt(i);
+            skippedCountNoReviews++;
         }
 
         var combinedText = string.Join(Environment.NewLine, uniqueWords);

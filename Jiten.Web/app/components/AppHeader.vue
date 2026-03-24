@@ -198,6 +198,7 @@
           <div class="flex flex-col py-2">
             <nuxt-link to="/" class="py-2 px-3" :class="route.path === '/' ? 'font-semibold !text-purple-200' : '!text-white'" @click="mobileMenuOpen = false">Home</nuxt-link>
             <nuxt-link to="/decks/media" class="py-2 px-3" :class="route.path.startsWith('/decks/media') ? 'font-semibold !text-purple-200' : '!text-white'" @click="mobileMenuOpen = false">Media</nuxt-link>
+            <nuxt-link v-if="auth.isAuthenticated && srs.srsEnrolled" to="/srs/decks" class="py-2 px-3" :class="route.path.startsWith('/srs') ? 'font-semibold !text-purple-200' : '!text-white'">Study</nuxt-link>
             <nuxt-link v-if="auth.isAuthenticated" to="/profile" class="py-2 px-3" :class="route.path.startsWith('/profile') ? 'font-semibold !text-purple-200' : '!text-white'" @click="mobileMenuOpen = false">Profile</nuxt-link>
             <nuxt-link v-if="auth.isAuthenticated" to="/ratings" class="py-2 px-3" :class="route.path === '/ratings' ? 'font-semibold !text-purple-200' : '!text-white'" @click="mobileMenuOpen = false">Ratings</nuxt-link>
             <nuxt-link v-if="auth.isAuthenticated" to="/settings" class="py-2 px-3" :class="route.path === '/settings' ? 'font-semibold !text-purple-200' : '!text-white'" @click="mobileMenuOpen = false">Settings</nuxt-link>

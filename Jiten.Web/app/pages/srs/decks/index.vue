@@ -30,6 +30,7 @@
       srsStore.fetchStudyDecks().finally(() => { decksLoading.value = false; }),
       srsStore.fetchDueSummary(),
       srsStore.fetchDeckStreak(),
+      srsStore.fetchSettings(),
     ]);
   });
 
@@ -96,6 +97,25 @@
   function combinedPct(deck: StudyDeckDto) {
     return pct(deck.masteredCount + deck.reviewCount + deck.learningCount, deck.totalWords);
   }
+
+  const newCardDeckIds = computed(() => {
+    const ids = new Set<number>();
+    const ds = srsStore.dueSummary;
+    if (!ds || ds.newCardsAvailable <= 0) return ids;
+
+    const active = srsStore.activeDecks;
+    if (srsStore.studySettings.newCardGathering === 'RoundRobin') {
+      for (const d of active) {
+        if (d.unseenCount > 0) ids.add(d.userStudyDeckId);
+      }
+    }
+    else {
+      for (const d of active) {
+        if (d.unseenCount > 0) { ids.add(d.userStudyDeckId); break; }
+      }
+    }
+    return ids;
+  });
 
   const deckUsage = computed(() => srsStore.studyDecks.length);
   const staticWordUsage = computed(() =>
@@ -260,7 +280,9 @@
           class="sm:!hidden"
           @click="startStudy"
         />
-        <Button icon="pi pi-refresh" severity="secondary" :loading="refreshing" @click="refresh" />
+        <Tooltip content="Refresh decks and due counts" placement="bottom">
+          <Button icon="pi pi-refresh" severity="secondary" :loading="refreshing" @click="refresh" />
+        </Tooltip>
         <NuxtLink to="/srs/history">
           <Button icon="pi pi-history" class="sm:!hidden" severity="secondary" />
           <Button icon="pi pi-history" label="History" severity="secondary" class="!hidden sm:!inline-flex" />
@@ -310,7 +332,7 @@
         >
           <span
             class="text-2xl font-bold tabular-nums"
-            :class="srsStore.dueSummary.newCardsAvailable > 0 ? 'text-green-600 dark:text-green-400' : 'text-gray-400 dark:text-gray-500'"
+            :class="srsStore.dueSummary.newCardsAvailable > 0 ? 'text-green-400 dark:text-green-600' : 'text-gray-400 dark:text-gray-500'"
           >{{ srsStore.dueSummary.newCardsAvailable }}</span>
           <span class="text-xs text-gray-500 dark:text-gray-400">New</span>
         </button>
@@ -435,79 +457,83 @@
           <div
             v-for="(deck, index) in srsStore.activeDecks"
             :key="deck.userStudyDeckId"
-            class="flex items-center gap-4 p-4 bg-surface-0 dark:bg-surface-900 rounded-xl shadow-sm border border-surface-200 dark:border-surface-700 transition-opacity"
+            class="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 p-4 bg-surface-0 dark:bg-surface-900 rounded-xl shadow-sm border border-surface-200 dark:border-surface-700 transition-opacity"
             :class="{
               'opacity-50': activeDragIndex === index,
               'border-purple-400 dark:border-purple-500': activeDropIndex === index && activeDragIndex !== index,
+              'border-l-3 border-l-green-300 dark:border-l-green-700': newCardDeckIds.has(deck.userStudyDeckId),
             }"
           >
-            <!-- Drag handle -->
-            <div
-              v-if="srsStore.activeDecks.length > 1"
-              class="flex-shrink-0 cursor-grab active:cursor-grabbing text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
-              style="touch-action: none"
-              @pointerdown="activePointerDown($event, index)"
-            >
-              <Icon name="material-symbols:drag-indicator" size="20" />
-            </div>
-
-            <!-- Cover -->
-            <div class="w-16 h-20 flex-shrink-0 rounded overflow-hidden bg-surface-100 dark:bg-surface-700">
-              <template v-if="deck.deckType === StudyDeckType.MediaDeck">
-                <img
-                  v-if="getCoverUrl(deck.coverName)"
-                  :src="getCoverUrl(deck.coverName)!"
-                  :alt="deck.title"
-                  class="w-full h-full object-cover"
-                />
-                <div v-else class="w-full h-full flex items-center justify-center text-gray-400">
-                  <Icon name="material-symbols:book-2" size="24" />
-                </div>
-              </template>
-              <div v-else-if="deck.deckType === StudyDeckType.GlobalDynamic" class="w-full h-full flex items-center justify-center text-blue-400">
-                <Icon name="material-symbols:language" size="28" />
+            <div class="flex items-center gap-4 flex-1 min-w-0">
+              <!-- Drag handle -->
+              <div
+                v-if="srsStore.activeDecks.length > 1"
+                class="flex-shrink-0 cursor-grab active:cursor-grabbing text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                style="touch-action: none"
+                @pointerdown="activePointerDown($event, index)"
+              >
+                <Icon name="material-symbols:drag-indicator" size="20" />
               </div>
-              <div v-else class="w-full h-full flex items-center justify-center text-green-400">
-                <Icon name="material-symbols:list-alt" size="28" />
-              </div>
-            </div>
 
-            <!-- Info -->
-            <div class="flex-1 min-w-0">
-              <div class="font-semibold truncate">
+              <!-- Cover -->
+              <div class="w-16 h-20 flex-shrink-0 rounded overflow-hidden bg-surface-100 dark:bg-surface-700">
                 <template v-if="deck.deckType === StudyDeckType.MediaDeck">
-                  {{ localiseTitle({ originalTitle: deck.title, romajiTitle: deck.romajiTitle, englishTitle: deck.englishTitle }) }}
+                  <img
+                    v-if="getCoverUrl(deck.coverName)"
+                    :src="getCoverUrl(deck.coverName)!"
+                    :alt="deck.title"
+                    class="w-full h-full object-cover"
+                  />
+                  <div v-else class="w-full h-full flex items-center justify-center text-gray-400">
+                    <Icon name="material-symbols:book-2" size="24" />
+                  </div>
                 </template>
-                <template v-else>{{ deck.name }}</template>
-              </div>
-              <div class="text-sm text-gray-500">
-                <template v-if="deck.deckType === StudyDeckType.MediaDeck">{{ getMediaTypeText(deck.mediaType) }}</template>
-                <template v-else-if="deck.deckType === StudyDeckType.GlobalDynamic">Global Frequency</template>
-                <template v-else>Word List</template>
-                <span v-if="deck.totalWords"> · {{ deck.totalWords }} words</span>
-                <span v-if="orderLabels[deck.order]"> · {{ orderLabels[deck.order] }}</span>
-                <span v-if="deck.description"> · {{ deck.description }}</span>
-              </div>
-              <div v-if="deck.totalWords > 0" class="mt-2">
-                <div class="relative w-full bg-surface-200 dark:bg-surface-700 rounded-lg h-6 overflow-hidden">
-                  <div class="absolute bg-purple-500/40 h-6 rounded-lg transition-all duration-700" :style="{ width: combinedPct(deck) + '%' }" />
-                  <div class="absolute bg-purple-500 h-6 rounded-lg transition-all duration-700" :style="{ width: knownPct(deck) + '%' }" />
-                  <span class="absolute inset-0 flex items-center pl-2 text-xs font-bold z-10 text-white drop-shadow-[0_0_2px_rgba(0,0,0,0.6)]">
-                    {{ knownPct(deck) }}%
-                  </span>
+                <div v-else-if="deck.deckType === StudyDeckType.GlobalDynamic" class="w-full h-full flex items-center justify-center text-blue-400">
+                  <Icon name="material-symbols:language" size="28" />
                 </div>
-                <div class="flex gap-3 mt-1 text-xs text-gray-500 flex-wrap">
-                  <span>{{ deck.unseenCount }} unseen</span>
-                  <span class="text-purple-400">{{ deck.learningCount }} learning</span>
-                  <span class="text-purple-600">{{ deck.reviewCount + deck.masteredCount }} known</span>
-                  <span v-if="deck.dueReviewCount > 0" class="text-blue-500 font-semibold">{{ deck.dueReviewCount }} due</span>
+                <div v-else class="w-full h-full flex items-center justify-center text-green-400">
+                  <Icon name="material-symbols:list-alt" size="28" />
                 </div>
-                <div v-if="deck.warning" class="text-xs text-yellow-500 mt-1">{{ deck.warning }}</div>
+              </div>
+
+              <!-- Info -->
+              <div class="flex-1 min-w-0">
+                <div class="font-semibold truncate">
+                  <template v-if="deck.deckType === StudyDeckType.MediaDeck">
+                    {{ localiseTitle({ originalTitle: deck.title, romajiTitle: deck.romajiTitle, englishTitle: deck.englishTitle }) }}
+                  </template>
+                  <template v-else>{{ deck.name }}</template>
+                </div>
+                <div class="text-sm text-gray-500">
+                  <template v-if="deck.deckType === StudyDeckType.MediaDeck">{{ getMediaTypeText(deck.mediaType) }}</template>
+                  <template v-else-if="deck.deckType === StudyDeckType.GlobalDynamic">Global Frequency</template>
+                  <template v-else>Word List</template>
+                  <span v-if="deck.totalWords"> · {{ deck.totalWords }} words</span>
+                  <span v-if="orderLabels[deck.order]"> · {{ orderLabels[deck.order] }}</span>
+                  <span v-if="deck.description"> · {{ deck.description }}</span>
+                  <span v-if="newCardDeckIds.has(deck.userStudyDeckId)" class="text-green-400 dark:text-green-600 font-medium"> · New cards from here</span>
+                </div>
+                <div v-if="deck.totalWords > 0" class="mt-2">
+                  <div class="relative w-full bg-surface-200 dark:bg-surface-700 rounded-lg h-6 overflow-hidden">
+                    <div class="absolute bg-purple-500/40 h-6 rounded-lg transition-all duration-700" :style="{ width: combinedPct(deck) + '%' }" />
+                    <div class="absolute bg-purple-500 h-6 rounded-lg transition-all duration-700" :style="{ width: knownPct(deck) + '%' }" />
+                    <span class="absolute inset-0 flex items-center pl-2 text-xs font-bold z-10 text-white drop-shadow-[0_0_2px_rgba(0,0,0,0.6)]">
+                      {{ knownPct(deck) }}%
+                    </span>
+                  </div>
+                  <div class="flex gap-3 mt-1 text-xs text-gray-500 flex-wrap">
+                    <span>{{ deck.unseenCount }} unseen</span>
+                    <span class="text-purple-400">{{ deck.learningCount }} learning</span>
+                    <span class="text-purple-600">{{ deck.reviewCount + deck.masteredCount }} known</span>
+                    <span v-if="deck.dueReviewCount > 0" class="text-blue-500 font-semibold">{{ deck.dueReviewCount }} due</span>
+                  </div>
+                  <div v-if="deck.warning" class="text-xs text-yellow-500 mt-1">{{ deck.warning }}</div>
+                </div>
               </div>
             </div>
 
             <!-- Actions -->
-            <div class="flex gap-1 flex-shrink-0 items-center">
+            <div class="flex gap-1 flex-shrink-0 items-center justify-end sm:justify-start">
               <div v-if="srsStore.activeDecks.length > 1" class="flex flex-col">
                 <Tooltip content="Move up" placement="top">
                   <Button
@@ -590,79 +616,81 @@
           <div
             v-for="(deck, index) in srsStore.inactiveDecks"
             :key="deck.userStudyDeckId"
-            class="flex items-center gap-4 p-4 bg-surface-0 dark:bg-surface-900 rounded-xl shadow-sm border border-surface-200 dark:border-surface-700 transition-opacity opacity-60"
+            class="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 p-4 bg-surface-0 dark:bg-surface-900 rounded-xl shadow-sm border border-surface-200 dark:border-surface-700 transition-opacity opacity-60"
             :class="{
               '!opacity-30': inactiveDragIndex === index,
               'border-purple-400 dark:border-purple-500': inactiveDropIndex === index && inactiveDragIndex !== index,
             }"
           >
-            <!-- Drag handle -->
-            <div
-              v-if="srsStore.inactiveDecks.length > 1"
-              class="flex-shrink-0 cursor-grab active:cursor-grabbing text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
-              style="touch-action: none"
-              @pointerdown="inactivePointerDown($event, index)"
-            >
-              <Icon name="material-symbols:drag-indicator" size="20" />
-            </div>
-
-            <!-- Cover -->
-            <div class="w-16 h-20 flex-shrink-0 rounded overflow-hidden bg-surface-100 dark:bg-surface-700">
-              <template v-if="deck.deckType === StudyDeckType.MediaDeck">
-                <img
-                  v-if="getCoverUrl(deck.coverName)"
-                  :src="getCoverUrl(deck.coverName)!"
-                  :alt="deck.title"
-                  class="w-full h-full object-cover"
-                />
-                <div v-else class="w-full h-full flex items-center justify-center text-gray-400">
-                  <Icon name="material-symbols:book-2" size="24" />
-                </div>
-              </template>
-              <div v-else-if="deck.deckType === StudyDeckType.GlobalDynamic" class="w-full h-full flex items-center justify-center text-blue-400">
-                <Icon name="material-symbols:language" size="28" />
+            <div class="flex items-center gap-4 flex-1 min-w-0">
+              <!-- Drag handle -->
+              <div
+                v-if="srsStore.inactiveDecks.length > 1"
+                class="flex-shrink-0 cursor-grab active:cursor-grabbing text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                style="touch-action: none"
+                @pointerdown="inactivePointerDown($event, index)"
+              >
+                <Icon name="material-symbols:drag-indicator" size="20" />
               </div>
-              <div v-else class="w-full h-full flex items-center justify-center text-green-400">
-                <Icon name="material-symbols:list-alt" size="28" />
-              </div>
-            </div>
 
-            <!-- Info -->
-            <div class="flex-1 min-w-0">
-              <div class="font-semibold truncate">
+              <!-- Cover -->
+              <div class="w-16 h-20 flex-shrink-0 rounded overflow-hidden bg-surface-100 dark:bg-surface-700">
                 <template v-if="deck.deckType === StudyDeckType.MediaDeck">
-                  {{ localiseTitle({ originalTitle: deck.title, romajiTitle: deck.romajiTitle, englishTitle: deck.englishTitle }) }}
+                  <img
+                    v-if="getCoverUrl(deck.coverName)"
+                    :src="getCoverUrl(deck.coverName)!"
+                    :alt="deck.title"
+                    class="w-full h-full object-cover"
+                  />
+                  <div v-else class="w-full h-full flex items-center justify-center text-gray-400">
+                    <Icon name="material-symbols:book-2" size="24" />
+                  </div>
                 </template>
-                <template v-else>{{ deck.name }}</template>
-              </div>
-              <div class="text-sm text-gray-500">
-                <template v-if="deck.deckType === StudyDeckType.MediaDeck">{{ getMediaTypeText(deck.mediaType) }}</template>
-                <template v-else-if="deck.deckType === StudyDeckType.GlobalDynamic">Global Frequency</template>
-                <template v-else>Word List</template>
-                <span v-if="deck.totalWords"> · {{ deck.totalWords }} words</span>
-                <span v-if="orderLabels[deck.order]"> · {{ orderLabels[deck.order] }}</span>
-                <span v-if="deck.description"> · {{ deck.description }}</span>
-              </div>
-              <div v-if="deck.totalWords > 0" class="mt-2">
-                <div class="relative w-full bg-surface-200 dark:bg-surface-700 rounded-lg h-6 overflow-hidden">
-                  <div class="absolute bg-purple-500/40 h-6 rounded-lg transition-all duration-700" :style="{ width: combinedPct(deck) + '%' }" />
-                  <div class="absolute bg-purple-500 h-6 rounded-lg transition-all duration-700" :style="{ width: knownPct(deck) + '%' }" />
-                  <span class="absolute inset-0 flex items-center pl-2 text-xs font-bold z-10 text-white drop-shadow-[0_0_2px_rgba(0,0,0,0.6)]">
-                    {{ knownPct(deck) }}%
-                  </span>
+                <div v-else-if="deck.deckType === StudyDeckType.GlobalDynamic" class="w-full h-full flex items-center justify-center text-blue-400">
+                  <Icon name="material-symbols:language" size="28" />
                 </div>
-                <div class="flex gap-3 mt-1 text-xs text-gray-500 flex-wrap">
-                  <span>{{ deck.unseenCount }} unseen</span>
-                  <span class="text-purple-400">{{ deck.learningCount }} learning</span>
-                  <span class="text-purple-600">{{ deck.reviewCount + deck.masteredCount }} known</span>
-                  <span v-if="deck.dueReviewCount > 0" class="text-blue-500 font-semibold">{{ deck.dueReviewCount }} due</span>
+                <div v-else class="w-full h-full flex items-center justify-center text-green-400">
+                  <Icon name="material-symbols:list-alt" size="28" />
                 </div>
-                <div v-if="deck.warning" class="text-xs text-yellow-500 mt-1">{{ deck.warning }}</div>
+              </div>
+
+              <!-- Info -->
+              <div class="flex-1 min-w-0">
+                <div class="font-semibold truncate">
+                  <template v-if="deck.deckType === StudyDeckType.MediaDeck">
+                    {{ localiseTitle({ originalTitle: deck.title, romajiTitle: deck.romajiTitle, englishTitle: deck.englishTitle }) }}
+                  </template>
+                  <template v-else>{{ deck.name }}</template>
+                </div>
+                <div class="text-sm text-gray-500">
+                  <template v-if="deck.deckType === StudyDeckType.MediaDeck">{{ getMediaTypeText(deck.mediaType) }}</template>
+                  <template v-else-if="deck.deckType === StudyDeckType.GlobalDynamic">Global Frequency</template>
+                  <template v-else>Word List</template>
+                  <span v-if="deck.totalWords"> · {{ deck.totalWords }} words</span>
+                  <span v-if="orderLabels[deck.order]"> · {{ orderLabels[deck.order] }}</span>
+                  <span v-if="deck.description"> · {{ deck.description }}</span>
+                </div>
+                <div v-if="deck.totalWords > 0" class="mt-2">
+                  <div class="relative w-full bg-surface-200 dark:bg-surface-700 rounded-lg h-6 overflow-hidden">
+                    <div class="absolute bg-purple-500/40 h-6 rounded-lg transition-all duration-700" :style="{ width: combinedPct(deck) + '%' }" />
+                    <div class="absolute bg-purple-500 h-6 rounded-lg transition-all duration-700" :style="{ width: knownPct(deck) + '%' }" />
+                    <span class="absolute inset-0 flex items-center pl-2 text-xs font-bold z-10 text-white drop-shadow-[0_0_2px_rgba(0,0,0,0.6)]">
+                      {{ knownPct(deck) }}%
+                    </span>
+                  </div>
+                  <div class="flex gap-3 mt-1 text-xs text-gray-500 flex-wrap">
+                    <span>{{ deck.unseenCount }} unseen</span>
+                    <span class="text-purple-400">{{ deck.learningCount }} learning</span>
+                    <span class="text-purple-600">{{ deck.reviewCount + deck.masteredCount }} known</span>
+                    <span v-if="deck.dueReviewCount > 0" class="text-blue-500 font-semibold">{{ deck.dueReviewCount }} due</span>
+                  </div>
+                  <div v-if="deck.warning" class="text-xs text-yellow-500 mt-1">{{ deck.warning }}</div>
+                </div>
               </div>
             </div>
 
             <!-- Actions -->
-            <div class="flex gap-1 flex-shrink-0 items-center">
+            <div class="flex gap-1 flex-shrink-0 items-center justify-end sm:justify-start">
               <div v-if="srsStore.inactiveDecks.length > 1" class="flex flex-col">
                 <Tooltip content="Move up" placement="top">
                   <Button
