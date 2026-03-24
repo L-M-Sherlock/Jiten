@@ -214,7 +214,7 @@
         </div>
         <div
           v-else
-          class="text-4xl md:text-5xl font-bold text-center mb-2 font-noto-sans"
+          class="text-4xl md:text-5xl font-bold text-center mb-2 font-noto-sans head-word"
           v-html="convertToRuby(wordData?.mainReading?.text || card.wordText || card.wordTextPlain)"
         />
         <!-- Example sentence on front -->
@@ -376,5 +376,9 @@
 :deep([data-pc-name="tabpanel"]),
 :deep([data-pc-name="tablist"]) {
   background: transparent !important;
+}
+.head-word :deep(rt) {
+  font-size: 0.35em !important;
+  color: light-dark(var(--p-surface-700), var(--p-surface-400));
 }
 </style>
