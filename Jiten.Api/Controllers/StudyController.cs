@@ -781,6 +781,45 @@ public class StudyController(
                     query = query.Where(dw => searchIds.Contains(dw.WordId));
                 }
 
+                switch ((DeckDownloadType)studyDeck.DownloadType)
+                {
+                    case DeckDownloadType.TopGlobalFrequency:
+                        query = query.Where(dw => context.WordFormFrequencies
+                            .Any(wff => wff.WordId == dw.WordId && wff.ReadingIndex == (short)dw.ReadingIndex &&
+                                        wff.FrequencyRank >= studyDeck.MinFrequency && wff.FrequencyRank <= studyDeck.MaxFrequency));
+                        break;
+                    case DeckDownloadType.TopDeckFrequency:
+                    {
+                        var rangeIds = await context.DeckWords.AsNoTracking()
+                            .Where(dw => dw.DeckId == studyDeck.DeckId)
+                            .OrderByDescending(dw => dw.Occurrences)
+                            .Skip(studyDeck.MinFrequency)
+                            .Take(studyDeck.MaxFrequency - studyDeck.MinFrequency)
+                            .Select(dw => dw.DeckWordId)
+                            .ToListAsync();
+                        query = query.Where(dw => rangeIds.Contains(dw.DeckWordId));
+                        break;
+                    }
+                    case DeckDownloadType.TopChronological:
+                    {
+                        var rangeIds = await context.DeckWords.AsNoTracking()
+                            .Where(dw => dw.DeckId == studyDeck.DeckId)
+                            .OrderBy(dw => dw.DeckWordId)
+                            .Skip(studyDeck.MinFrequency)
+                            .Take(studyDeck.MaxFrequency - studyDeck.MinFrequency)
+                            .Select(dw => dw.DeckWordId)
+                            .ToListAsync();
+                        query = query.Where(dw => rangeIds.Contains(dw.DeckWordId));
+                        break;
+                    }
+                    case DeckDownloadType.OccurrenceCount:
+                        if (studyDeck.MinOccurrences.HasValue)
+                            query = query.Where(dw => dw.Occurrences >= studyDeck.MinOccurrences.Value);
+                        if (studyDeck.MaxOccurrences.HasValue)
+                            query = query.Where(dw => dw.Occurrences <= studyDeck.MaxOccurrences.Value);
+                        break;
+                }
+
                 IOrderedQueryable<DeckWord> sorted = sortBy switch
                 {
                     "deckFreq" => sortOrder == SortOrder.Ascending
@@ -804,6 +843,18 @@ public class StudyController(
                     .Select(d => new { d.WordId, ReadingIndex = (short)d.ReadingIndex, d.Occurrences })
                     .ToListAsync();
                 allItems = mediaDeckItems.Select(d => (d.WordId, d.ReadingIndex, d.Occurrences)).ToList();
+
+                if ((DeckDownloadType)studyDeck.DownloadType == DeckDownloadType.TargetCoverage && studyDeck.TargetPercentage.HasValue)
+                {
+                    var deck = await context.Decks.AsNoTracking()
+                        .FirstOrDefaultAsync(d => d.DeckId == studyDeck.DeckId);
+                    if (deck != null)
+                    {
+                        var (_, targetKeys) = await deckWordResolver.CountTargetCoverageWords(
+                            studyDeck.DeckId!.Value, deck, studyDeck.TargetPercentage.Value, false);
+                        allItems = allItems.Where(i => targetKeys.Contains(WordFormHelper.EncodeWordKey(i.WordId, i.ReadingIndex))).ToList();
+                    }
+                }
 
                 if (studyDeck.ExcludeKana)
                 {
