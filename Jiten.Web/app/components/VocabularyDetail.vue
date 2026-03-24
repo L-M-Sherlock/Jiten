@@ -47,11 +47,9 @@
     computed(() => response.value?.definitions),
   );
 
-  const getSortedReadings = () => {
+  const sortedReadings = computed(() => {
     return response.value?.alternativeReadings.sort((a, b) => b.frequencyPercentage - a.frequencyPercentage) || [];
-  };
-
-  const sortedReadings = computed(() => getSortedReadings());
+  });
 
   const mediaAmountUrl = 'media-deck/decks-count';
   const { data: mediaAmountResponse } = useApiFetch<Record<MediaType, number>>(mediaAmountUrl);
@@ -79,15 +77,13 @@
 
   const switchReadingOrWord = async () => {
     isTransitioning.value = true;
-    fetchedKnownStates.value = null;
-    await refreshInfo();
+    await Promise.all([refreshInfo(), refreshKnownStates()]);
     isTransitioning.value = false;
 
     selectedMediaType.value = null;
     mediaAccordionValue.value = '0';
 
     refreshMediaFrequency();
-    refreshKnownStates();
 
     exampleSentences.value = [];
     canLoadExampleSentences.value = true;
@@ -103,6 +99,7 @@
   watch(
     [() => props.wordId, () => props.readingIndex],
     async ([newWordId, newReadingIndex]) => {
+      if (currentReadingIndex.value === newReadingIndex) return;
       currentReadingIndex.value = newReadingIndex;
       await switchReadingOrWord();
     },
