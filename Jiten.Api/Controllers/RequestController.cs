@@ -637,6 +637,12 @@ public partial class RequestController(
                     ? SanitiseFileName(files[0].FileName)
                     : string.Join(", ", files.Select(f => SanitiseFileName(f.FileName)));
 
+                if (displayName.Length > 255)
+                {
+                    var suffix = originalFileCount > 1 ? $"... (+{originalFileCount} files)" : "...";
+                    displayName = displayName[..(255 - suffix.Length)] + suffix;
+                }
+
                 using var ms = new MemoryStream();
                 using (var archive = new ZipArchive(ms, ZipArchiveMode.Create, true))
                 {
