@@ -101,6 +101,12 @@
     return sanitiseHtml(html);
   });
 
+  const exampleRevealed = ref(false);
+
+  watch(() => `${props.card.wordId}-${props.card.readingIndex}`, () => {
+    exampleRevealed.value = false;
+  });
+
   const extraSentences = ref<ExampleSentence[]>([]);
   const extraSentencesExpanded = ref(false);
   const canLoadMoreSentences = ref(true);
@@ -213,7 +219,11 @@
         />
         <!-- Example sentence on front -->
         <div v-if="srsStore.studySettings.exampleSentencePosition === 'Front' && exampleSentenceHtml" class="mt-4 w-full">
-          <blockquote class="relative inline-block border-l-4 border-primary-500 pl-5 pr-3 py-3 bg-surface-50 dark:bg-surface-800 rounded-r shadow-sm overflow-hidden w-full">
+          <blockquote
+            class="relative inline-block border-l-4 border-primary-500 pl-5 pr-3 py-3 bg-surface-50 dark:bg-surface-800 rounded-r shadow-sm overflow-hidden w-full"
+            :class="{ 'blur-md select-none cursor-pointer': srsStore.studySettings.blurExampleSentence && !exampleRevealed }"
+            @click.stop="exampleRevealed = true"
+          >
             <div v-html="exampleSentenceHtml" class="text-base leading-relaxed" />
           </blockquote>
         </div>
@@ -265,7 +275,11 @@
         <!-- Example sentence (back) -->
         <div v-if="srsStore.studySettings.exampleSentencePosition === 'Back'" class="mb-4">
           <template v-if="exampleSentenceHtml">
-            <blockquote class="relative inline-block border-l-4 border-primary-500 pl-5 pr-3 py-3 bg-surface-50 dark:bg-surface-800 rounded-r shadow-sm overflow-hidden w-full">
+            <blockquote
+              class="relative inline-block border-l-4 border-primary-500 pl-5 pr-3 py-3 bg-surface-50 dark:bg-surface-800 rounded-r shadow-sm overflow-hidden w-full"
+              :class="{ 'blur-md select-none cursor-pointer': srsStore.studySettings.blurExampleSentence && !exampleRevealed }"
+              @click.stop="exampleRevealed = true"
+            >
               <div v-html="exampleSentenceHtml" class="text-base leading-relaxed" />
             </blockquote>
             <div v-if="cardExample?.sourceDeck" class="flex items-center mt-1">

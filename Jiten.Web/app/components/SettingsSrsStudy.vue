@@ -113,7 +113,7 @@
             <i class="pi pi-info-circle text-xs text-surface-400 ml-1 cursor-help" />
           </Tooltip>
         </label>
-        <SelectButton v-model="form.gradingButtons" :options="gradingOptions" option-label="label" option-value="value" />
+        <SelectButton v-model="form.gradingButtons" :options="gradingOptions" option-label="label" option-value="value" :allow-empty="false" />
       </div>
 
       <div>
@@ -123,7 +123,7 @@
             <i class="pi pi-info-circle text-xs text-surface-400 ml-1 cursor-help" />
           </Tooltip>
         </label>
-        <SelectButton v-model="form.interleaving" :options="interleavingOptions" option-label="label" option-value="value" class="flex-wrap" />
+        <SelectButton v-model="form.interleaving" :options="interleavingOptions" option-label="label" option-value="value" :allow-empty="false" class="flex-wrap" />
       </div>
 
       <div>
@@ -133,7 +133,7 @@
             <i class="pi pi-info-circle text-xs text-surface-400 ml-1 cursor-help" />
           </Tooltip>
         </label>
-        <SelectButton v-model="form.newCardGathering" :options="newCardGatheringOptions" option-label="label" option-value="value" class="flex-wrap" />
+        <SelectButton v-model="form.newCardGathering" :options="newCardGatheringOptions" option-label="label" option-value="value" :allow-empty="false" class="flex-wrap" />
       </div>
 
       <div>
@@ -143,7 +143,7 @@
             <i class="pi pi-info-circle text-xs text-surface-400 ml-1 cursor-help" />
           </Tooltip>
         </label>
-        <SelectButton v-model="form.reviewFrom" :options="reviewFromOptions" option-label="label" option-value="value" class="flex-wrap" />
+        <SelectButton v-model="form.reviewFrom" :options="reviewFromOptions" option-label="label" option-value="value" :allow-empty="false" class="flex-wrap" />
       </div>
 
       <div>
@@ -165,7 +165,16 @@
                 <i class="pi pi-info-circle text-xs text-surface-400 ml-1 cursor-help" />
               </Tooltip>
             </label>
-            <SelectButton v-model="form.exampleSentencePosition" :options="exampleSentenceOptions" option-label="label" option-value="value" />
+            <SelectButton v-model="form.exampleSentencePosition" :options="exampleSentenceOptions" option-label="label" option-value="value" :allow-empty="false" />
+            <div v-if="form.exampleSentencePosition !== 'Hidden'" class="flex items-center gap-2 mt-2">
+              <ToggleSwitch v-model="form.blurExampleSentence" input-id="blurExampleSentence" />
+              <label for="blurExampleSentence" class="text-sm cursor-pointer">
+                Blur until clicked
+                <Tooltip content="Example sentence is blurred by default. Click it to reveal." placement="right">
+                  <i class="pi pi-info-circle text-xs text-surface-400 ml-1 cursor-help" />
+                </Tooltip>
+              </label>
+            </div>
           </div>
           <div class="flex items-center gap-2">
             <ToggleSwitch v-model="form.showFrequencyRank" input-id="showFrequencyRank" />
