@@ -197,7 +197,7 @@
       <!-- Front (always visible) -->
       <div
         class="flex flex-col items-center"
-        :class="{ 'cursor-pointer': !isFlipped }"
+        :class="{ 'cursor-pointer min-h-[50vh]': !isFlipped }"
         :role="!isFlipped ? 'button' : undefined"
         :tabindex="!isFlipped ? 0 : undefined"
         :aria-label="!isFlipped ? 'Reveal answer' : undefined"
