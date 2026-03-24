@@ -258,8 +258,13 @@
           </template>
           <template v-else>
             <div v-for="def in fallbackDefinitions" :key="def.index">
-              <div v-if="def.showPos" class="font-bold mt-2">
-                {{ def.partsOfSpeech.join(', ') }}
+              <div v-if="def.showPos" class="flex flex-wrap gap-1 mt-2 mb-0.5">
+                <Tooltip v-for="pos in def.partsOfSpeech" :key="pos" :content="pos" placement="top">
+                  <span
+                    class="pos-badge"
+                    :class="`pos-${posColorClass(abbreviatePos(pos))}`"
+                  >{{ abbreviatePos(pos) }}</span>
+                </Tooltip>
               </div>
               <div>
                 <span class="text-gray-400">{{ def.index }}.</span> {{ def.meanings.join('; ') }}
@@ -381,4 +386,5 @@
   font-size: 0.35em !important;
   color: light-dark(var(--p-surface-700), var(--p-surface-400));
 }
+
 </style>
