@@ -22,7 +22,6 @@ public class UserDbContext : IdentityDbContext<User>
 
     public DbSet<UserCoverage> UserCoverages { get; set; }
     public DbSet<UserCoverageChunk> UserCoverageChunks { get; set; }
-    public DbSet<UserKnownWord> UserKnownWords { get; set; }
     public DbSet<RefreshToken> RefreshTokens { get; set; }
     public DbSet<UserMetadata> UserMetadatas { get; set; }
     public DbSet<ApiKey> ApiKeys { get; set; }
@@ -129,22 +128,6 @@ public class UserDbContext : IdentityDbContext<User>
                   .OnDelete(DeleteBehavior.Cascade);
 
             entity.HasIndex(uc => uc.UserId).HasDatabaseName("IX_UserCoverageChunks_UserId");
-        });
-
-        modelBuilder.Entity<UserKnownWord>(entity =>
-        {
-            entity.HasKey(uk => new { uk.UserId, uk.WordId, uk.ReadingIndex });
-            entity.Property(uk => uk.LearnedDate).IsRequired();
-            entity.Property(uk => uk.KnownState).IsRequired();
-            if (isNpgsql)
-                entity.Property(uk => uk.UserId).HasConversion(guidToString).HasColumnType("uuid").IsRequired();
-
-            entity.HasOne<User>()
-                  .WithMany()
-                  .HasForeignKey(uk => uk.UserId)
-                  .OnDelete(DeleteBehavior.Cascade);
-
-            entity.HasIndex(uk => uk.UserId).HasDatabaseName("IX_UserKnownWord_UserId");
         });
 
         modelBuilder.Entity<UserMetadata>(entity =>
