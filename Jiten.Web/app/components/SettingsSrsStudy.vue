@@ -77,32 +77,32 @@
     </div>
     <div v-else class="flex flex-col gap-4">
       <div :class="props.inline ? 'flex flex-col gap-4' : 'grid grid-cols-1 md:grid-cols-3 gap-4'">
-        <div>
+        <div class="min-w-0">
           <label class="block text-sm font-medium mb-1">
             New cards per day
             <Tooltip content="Maximum number of new words introduced each day. Set to 0 to pause learning new words while still reviewing." placement="top">
               <i class="pi pi-info-circle text-xs text-surface-400 ml-1 cursor-help" />
             </Tooltip>
           </label>
-          <InputNumber v-model="form.newCardsPerDay" :min="0" :max="9999" :show-buttons="!props.inline" class="w-full" />
+          <InputNumber v-model="form.newCardsPerDay" :min="0" :max="9999" :show-buttons="!props.inline" class="w-full [&_input]:w-full" />
         </div>
-        <div>
+        <div class="min-w-0">
           <label class="block text-sm font-medium mb-1">
             Max reviews per day
             <Tooltip content="Maximum number of review cards shown each day. Reviews that exceed this limit carry over to the next day." placement="top">
               <i class="pi pi-info-circle text-xs text-surface-400 ml-1 cursor-help" />
             </Tooltip>
           </label>
-          <InputNumber v-model="form.maxReviewsPerDay" :min="0" :max="9999" :show-buttons="!props.inline" class="w-full" />
+          <InputNumber v-model="form.maxReviewsPerDay" :min="0" :max="9999" :show-buttons="!props.inline" class="w-full [&_input]:w-full" />
         </div>
-        <div>
+        <div class="min-w-0">
           <label class="block text-sm font-medium mb-1">
             Card batch size
             <Tooltip content="Number of cards loaded at a time during a study session. Smaller batches keep sessions focused, larger batches reduce loading pauses." placement="top">
               <i class="pi pi-info-circle text-xs text-surface-400 ml-1 cursor-help" />
             </Tooltip>
           </label>
-          <InputNumber v-model="form.batchSize" :min="1" :max="999" :show-buttons="!props.inline" class="w-full" />
+          <InputNumber v-model="form.batchSize" :min="1" :max="999" :show-buttons="!props.inline" class="w-full [&_input]:w-full" />
         </div>
       </div>
 

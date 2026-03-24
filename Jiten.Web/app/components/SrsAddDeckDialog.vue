@@ -570,13 +570,13 @@
           <Select v-model="downloadType" :options="downloadTypeOptions" option-label="label" option-value="value" class="w-full" />
         </div>
         <div v-if="downloadType !== DeckDownloadType.Full" class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
-          <div>
+          <div class="min-w-0">
             <label class="block text-xs mb-1">Min</label>
-            <InputNumber v-model="minFrequency" :min="0" class="w-full" />
+            <InputNumber v-model="minFrequency" :min="0" class="w-full [&_input]:w-full" />
           </div>
-          <div>
+          <div class="min-w-0">
             <label class="block text-xs mb-1">Max</label>
-            <InputNumber v-model="maxFrequency" :min="0" class="w-full" />
+            <InputNumber v-model="maxFrequency" :min="0" class="w-full [&_input]:w-full" />
           </div>
         </div>
       </template>
@@ -590,13 +590,13 @@
 
       <template v-if="downloadMode === 'occurrence'">
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
-          <div>
+          <div class="min-w-0">
             <label class="block text-xs mb-1">Min Occurrences</label>
-            <InputNumber v-model="minOccurrences" :min="1" class="w-full" />
+            <InputNumber v-model="minOccurrences" :min="1" class="w-full [&_input]:w-full" />
           </div>
-          <div>
+          <div class="min-w-0">
             <label class="block text-xs mb-1">Max Occurrences</label>
-            <InputNumber v-model="maxOccurrences" :min="1" class="w-full" />
+            <InputNumber v-model="maxOccurrences" :min="1" class="w-full [&_input]:w-full" />
           </div>
         </div>
       </template>
@@ -644,13 +644,13 @@
         <Textarea v-model="globalDescription" class="w-full" rows="2" :maxlength="2000" />
       </div>
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
-        <div>
+        <div class="min-w-0">
           <label class="block text-xs mb-1">Min Frequency Rank</label>
-          <InputNumber v-model="globalMinFreq" :min="1" class="w-full" />
+          <InputNumber v-model="globalMinFreq" :min="1" class="w-full [&_input]:w-full" />
         </div>
-        <div>
+        <div class="min-w-0">
           <label class="block text-xs mb-1">Max Frequency Rank</label>
-          <InputNumber v-model="globalMaxFreq" :min="1" class="w-full" />
+          <InputNumber v-model="globalMaxFreq" :min="1" class="w-full [&_input]:w-full" />
         </div>
       </div>
 
