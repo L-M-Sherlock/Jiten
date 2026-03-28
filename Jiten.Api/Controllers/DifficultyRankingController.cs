@@ -297,16 +297,35 @@ public class DifficultyRankingController(
             return;
         }
 
-        var existing = await context.DifficultyVotes
+        var manualPairSet = await context.DifficultyVotes
             .Where(v => v.UserId == userId
+                && v.IsValid
+                && v.Source == DifficultyVoteSource.Manual
+                && rankedDeckIds.Contains(v.DeckLowId)
+                && rankedDeckIds.Contains(v.DeckHighId))
+            .Select(v => new { v.DeckLowId, v.DeckHighId })
+            .ToListAsync();
+        var manualPairs = manualPairSet
+            .Select(v => (v.DeckLowId, v.DeckHighId))
+            .ToHashSet();
+
+        foreach (var pair in manualPairs)
+            implied.Remove(pair);
+
+        var existingWeakOrder = await context.DifficultyVotes
+            .Where(v => v.UserId == userId
+                && v.Source == DifficultyVoteSource.WeakOrder
                 && rankedDeckIds.Contains(v.DeckLowId)
                 && rankedDeckIds.Contains(v.DeckHighId))
             .ToListAsync();
+        existingWeakOrder = existingWeakOrder
+            .Where(v => !manualPairs.Contains((v.DeckLowId, v.DeckHighId)))
+            .ToList();
 
-        var existingPairs = existing.ToDictionary(v => (v.DeckLowId, v.DeckHighId));
+        var existingPairs = existingWeakOrder.ToDictionary(v => (v.DeckLowId, v.DeckHighId));
         var now = DateTimeOffset.UtcNow;
 
-        foreach (var vote in existing)
+        foreach (var vote in existingWeakOrder)
         {
             var rankLow = rankIndexByDeckId[vote.DeckLowId];
             var rankHigh = rankIndexByDeckId[vote.DeckHighId];
