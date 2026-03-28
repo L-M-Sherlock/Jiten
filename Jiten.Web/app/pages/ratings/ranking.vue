@@ -261,6 +261,7 @@ onUnmounted(cancelDrag);
 
         <!-- Ranked groups -->
         <div class="min-w-0">
+          <div class="text-xs text-muted-color mb-2">Top is easiest, bottom is hardest.</div>
           <div
             v-if="activeSection.groups.length === 0"
             class="empty-drop text-muted-color"

@@ -17,6 +17,11 @@ public class DifficultyRankingController(
     UserDbContext userContext,
     ICurrentUserService currentUserService) : ControllerBase
 {
+    private const decimal AutoRankTieThreshold = 0.25m;
+    private const int AutoRankMinComparisons = 1;
+
+    private sealed record DeckMeta(DeckSummaryDto Summary, MediaTypeGroup Group);
+
     [HttpGet]
     public async Task<IResult> GetRankings([FromQuery] MediaTypeGroup? group = null)
     {
@@ -37,13 +42,24 @@ public class DifficultyRankingController(
             .Select(d => new { d.DeckId, d.OriginalTitle, d.RomajiTitle, d.EnglishTitle, d.CoverName, d.Difficulty, d.MediaType })
             .ToListAsync();
 
-        var deckMap = deckRows.ToDictionary(d => d.DeckId, d => new
-        {
-            Summary = MapDeckSummary(d.DeckId, d.OriginalTitle, d.RomajiTitle, d.EnglishTitle, d.CoverName, d.Difficulty, d.MediaType),
-            Group = MediaTypeGroups.GetGroup(d.MediaType)
-        });
+        var deckMap = deckRows.ToDictionary(
+            d => d.DeckId,
+            d => new DeckMeta(
+                MapDeckSummary(d.DeckId, d.OriginalTitle, d.RomajiTitle, d.EnglishTitle, d.CoverName, d.Difficulty, d.MediaType),
+                MediaTypeGroups.GetGroup(d.MediaType)));
 
         var groupFilter = group.HasValue ? new HashSet<MediaTypeGroup> { group.Value } : null;
+
+        var groupsToInit = deckMap.Values
+            .Select(d => d.Group)
+            .Where(g => groupFilter == null || groupFilter.Contains(g))
+            .Distinct()
+            .ToList();
+        foreach (var g in groupsToInit)
+        {
+            if (await InitializeFromManualVotes(userId, g, deckMap))
+                await SyncDerivedVotes(userId, g);
+        }
 
         var rankGroups = await context.DifficultyRankGroups.AsNoTracking()
             .Where(g => g.UserId == userId && (groupFilter == null || groupFilter.Contains(g.MediaTypeGroup)))
@@ -211,6 +227,99 @@ public class DifficultyRankingController(
 
         var result = await GetRankings(group);
         return result;
+    }
+
+    private async Task<bool> InitializeFromManualVotes(string userId, MediaTypeGroup group, Dictionary<int, DeckMeta> deckMap)
+    {
+        var hasGroups = await context.DifficultyRankGroups
+            .AsNoTracking()
+            .AnyAsync(g => g.UserId == userId && g.MediaTypeGroup == group);
+        if (hasGroups)
+            return false;
+
+        var groupDeckIds = deckMap
+            .Where(kvp => kvp.Value.Group == group)
+            .Select(kvp => kvp.Key)
+            .ToHashSet();
+        if (groupDeckIds.Count < 2)
+            return false;
+
+        var votes = await context.DifficultyVotes.AsNoTracking()
+            .Where(v => v.UserId == userId
+                && v.IsValid
+                && v.Source == DifficultyVoteSource.Manual
+                && groupDeckIds.Contains(v.DeckLowId)
+                && groupDeckIds.Contains(v.DeckHighId))
+            .Select(v => new { v.DeckLowId, v.DeckHighId, v.Outcome })
+            .ToListAsync();
+
+        if (votes.Count == 0)
+            return false;
+
+        var sumByDeck = new Dictionary<int, int>();
+        var countByDeck = new Dictionary<int, int>();
+
+        void AddDelta(int deckId, int delta)
+        {
+            sumByDeck[deckId] = sumByDeck.GetValueOrDefault(deckId) + delta;
+            countByDeck[deckId] = countByDeck.GetValueOrDefault(deckId) + 1;
+        }
+
+        foreach (var v in votes)
+        {
+            var outcome = (int)v.Outcome;
+            AddDelta(v.DeckLowId, outcome);
+            AddDelta(v.DeckHighId, -outcome);
+        }
+
+        var scoredDecks = sumByDeck
+            .Select(kvp => new
+            {
+                DeckId = kvp.Key,
+                Score = kvp.Value / (decimal)countByDeck[kvp.Key],
+                Count = countByDeck[kvp.Key]
+            })
+            .Where(d => d.Count >= AutoRankMinComparisons)
+            .OrderBy(d => d.Score)
+            .ThenBy(d => deckMap[d.DeckId].Summary.Title)
+            .ToList();
+
+        if (scoredDecks.Count < 2)
+            return false;
+
+        var now = DateTimeOffset.UtcNow;
+        var groups = new List<DifficultyRankGroup>();
+        DifficultyRankGroup? current = null;
+        decimal? lastScore = null;
+
+        foreach (var entry in scoredDecks)
+        {
+            if (current == null || (lastScore.HasValue && Math.Abs(entry.Score - lastScore.Value) > AutoRankTieThreshold))
+            {
+                current = new DifficultyRankGroup
+                {
+                    UserId = userId,
+                    MediaTypeGroup = group,
+                    SortIndex = groups.Count,
+                    CreatedAt = now
+                };
+                groups.Add(current);
+            }
+
+            var item = new DifficultyRankItem
+            {
+                UserId = userId,
+                DeckId = entry.DeckId,
+                Group = current,
+                CreatedAt = now
+            };
+            current.Items.Add(item);
+            lastScore = entry.Score;
+        }
+
+        context.DifficultyRankGroups.AddRange(groups);
+        await context.SaveChangesAsync();
+        return true;
     }
 
     private async Task SyncDerivedVotes(string userId, MediaTypeGroup group)
