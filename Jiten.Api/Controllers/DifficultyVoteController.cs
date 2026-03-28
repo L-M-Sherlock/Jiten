@@ -84,6 +84,7 @@ public class DifficultyVoteController(
         {
             existing.Outcome = outcome;
             existing.UpdatedAt = DateTimeOffset.UtcNow;
+            existing.Source = DifficultyVoteSource.Manual;
 
             var existingSkipForUpdate = await context.SkippedComparisons
                 .FirstOrDefaultAsync(s => s.UserId == userId && s.DeckLowId == deckLowId && s.DeckHighId == deckHighId);
@@ -100,6 +101,7 @@ public class DifficultyVoteController(
             DeckLowId = deckLowId,
             DeckHighId = deckHighId,
             Outcome = outcome,
+            Source = DifficultyVoteSource.Manual,
             CreatedAt = DateTimeOffset.UtcNow,
             IsValid = true
         };
@@ -428,7 +430,7 @@ public class DifficultyVoteController(
             default: // "comparisons"
             {
                 var votesQuery = context.DifficultyVotes.AsNoTracking()
-                    .Where(v => v.UserId == userId && v.IsValid)
+                    .Where(v => v.UserId == userId && v.IsValid && v.Source == DifficultyVoteSource.Manual)
                     .OrderByDescending(v => v.Id);
 
                 var totalItems = await votesQuery.CountAsync();
@@ -568,7 +570,7 @@ public class DifficultyVoteController(
             return Results.Unauthorized();
 
         var totalComparisons = await context.DifficultyVotes
-            .CountAsync(v => v.UserId == userId && v.IsValid);
+            .CountAsync(v => v.UserId == userId && v.IsValid && v.Source == DifficultyVoteSource.Manual);
 
         var totalRatings = await context.DifficultyRatings
             .CountAsync(r => r.UserId == userId);
@@ -577,7 +579,7 @@ public class DifficultyVoteController(
         if (totalComparisons > 0)
         {
             var userCounts = context.DifficultyVotes
-                .Where(v => v.IsValid)
+                .Where(v => v.IsValid && v.Source == DifficultyVoteSource.Manual)
                 .GroupBy(v => v.UserId)
                 .Select(g => new { Count = g.Count() });
 
