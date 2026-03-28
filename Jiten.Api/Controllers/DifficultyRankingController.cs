@@ -227,10 +227,11 @@ public class DifficultyRankingController(
                 return Results.BadRequest("Invalid move mode.");
         }
 
-        for (var i = 0; i < groups.Count; i++)
-            groups[i].SortIndex = i;
-
-        await context.SaveChangesAsync();
+        var needsReindex = removedEmptyGroup || request.Mode == DifficultyRankingMoveMode.Insert;
+        if (needsReindex)
+            await SaveGroupsWithReindex(groups);
+        else
+            await context.SaveChangesAsync();
         await SyncDerivedVotes(userId, group);
 
         var result = await GetRankings(group);
@@ -332,6 +333,26 @@ public class DifficultyRankingController(
 
     private Task SyncDerivedVotes(string userId, MediaTypeGroup group)
         => DifficultyRankingSync.SyncDerivedVotes(context, userContext, userId, group);
+
+    private async Task SaveGroupsWithReindex(List<DifficultyRankGroup> groups)
+    {
+        if (groups.Count == 0)
+        {
+            await context.SaveChangesAsync();
+            return;
+        }
+
+        var minIndex = groups.Min(g => g.SortIndex);
+        for (var i = 0; i < groups.Count; i++)
+            groups[i].SortIndex = minIndex - 1 - i;
+
+        await context.SaveChangesAsync();
+
+        for (var i = 0; i < groups.Count; i++)
+            groups[i].SortIndex = i;
+
+        await context.SaveChangesAsync();
+    }
 
     private static DeckSummaryDto MapDeckSummary(int deckId, string title, string? romajiTitle, string? englishTitle, string coverName, float difficulty, MediaType mediaType) => new()
     {

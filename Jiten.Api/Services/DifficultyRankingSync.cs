@@ -32,7 +32,7 @@ public static class DifficultyRankingSync
             .OrderBy(g => g.SortIndex)
             .ToListAsync();
 
-        var rankedDeckIds = groups
+        var rankedDeckIdsRaw = groups
             .SelectMany(g => g.Items)
             .Select(i => i.DeckId)
             .ToHashSet();
@@ -40,6 +40,10 @@ public static class DifficultyRankingSync
         var groupDeckIds = deckRows
             .Where(d => MediaTypeGroups.GetGroup(d.MediaType) == group)
             .Select(d => d.DeckId)
+            .ToHashSet();
+
+        var rankedDeckIds = rankedDeckIdsRaw
+            .Where(id => groupDeckIds.Contains(id))
             .ToHashSet();
 
         var implied = new Dictionary<(int lowId, int highId), ComparisonOutcome>();
@@ -55,7 +59,10 @@ public static class DifficultyRankingSync
         }
 
         var orderedGroups = groups
-            .Select(g => g.Items.Select(i => i.DeckId).OrderBy(id => id).ToList())
+            .Select(g => g.Items.Select(i => i.DeckId)
+                .Where(id => groupDeckIds.Contains(id))
+                .OrderBy(id => id)
+                .ToList())
             .Where(list => list.Count > 0)
             .ToList();
 
@@ -89,7 +96,8 @@ public static class DifficultyRankingSync
             .Where(v => v.UserId == userId
                 && v.Source == DifficultyVoteSource.WeakOrder
                 && (!rankedDeckIds.Contains(v.DeckLowId) || !rankedDeckIds.Contains(v.DeckHighId))
-                && (groupDeckIds.Contains(v.DeckLowId) || groupDeckIds.Contains(v.DeckHighId)))
+                && (rankedDeckIdsRaw.Contains(v.DeckLowId) || rankedDeckIdsRaw.Contains(v.DeckHighId)
+                    || groupDeckIds.Contains(v.DeckLowId) || groupDeckIds.Contains(v.DeckHighId)))
             .ToListAsync();
         if (staleDerived.Count > 0)
             context.DifficultyVotes.RemoveRange(staleDerived);
