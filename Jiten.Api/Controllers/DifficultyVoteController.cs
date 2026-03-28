@@ -33,7 +33,7 @@ public class DifficultyVoteController(
 
         var oneMinuteAgo = DateTimeOffset.UtcNow.AddMinutes(-1);
         var recentTimestamps = await context.DifficultyVotes
-            .Where(v => v.UserId == userId)
+            .Where(v => v.UserId == userId && v.Source == DifficultyVoteSource.Manual)
             .OrderByDescending(v => v.Id)
             .Take(VotesPerMinuteLimit)
             .Select(v => v.CreatedAt)
@@ -466,8 +466,31 @@ public class DifficultyVoteController(
         if (vote == null || vote.UserId != userId)
             return Results.NotFound();
 
+        var wasManual = vote.Source == DifficultyVoteSource.Manual;
+        var deckLowId = vote.DeckLowId;
+        var deckHighId = vote.DeckHighId;
+
         context.DifficultyVotes.Remove(vote);
         await context.SaveChangesAsync();
+
+        if (wasManual)
+        {
+            var decks = await context.Decks.AsNoTracking()
+                .Where(d => d.DeckId == deckLowId || d.DeckId == deckHighId)
+                .Select(d => new { d.DeckId, d.MediaType })
+                .ToListAsync();
+
+            if (decks.Count == 2)
+            {
+                var deckA = decks.First(d => d.DeckId == deckLowId);
+                var deckB = decks.First(d => d.DeckId == deckHighId);
+                var groupA = MediaTypeGroups.GetGroup(deckA.MediaType);
+                var groupB = MediaTypeGroups.GetGroup(deckB.MediaType);
+                if (groupA == groupB)
+                    await DifficultyRankingSync.SyncDerivedVotes(context, userContext, userId, groupA);
+            }
+        }
+
         return Results.NoContent();
     }
 

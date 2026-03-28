@@ -154,6 +154,11 @@ public class DifficultyRankingController(
             }
         }
 
+        int? sourceIndex = null;
+        var removedEmptyGroup = false;
+        if (currentGroup != null)
+            sourceIndex = groups.IndexOf(currentGroup);
+
         if (currentItem != null)
         {
             currentGroup!.Items.Remove(currentItem);
@@ -162,6 +167,7 @@ public class DifficultyRankingController(
             {
                 context.DifficultyRankGroups.Remove(currentGroup);
                 groups.Remove(currentGroup);
+                removedEmptyGroup = true;
             }
         }
 
@@ -195,6 +201,8 @@ public class DifficultyRankingController(
                     return Results.BadRequest("InsertIndex is required for insert.");
 
                 var insertIndex = Math.Clamp(request.InsertIndex.Value, 0, groups.Count);
+                if (removedEmptyGroup && sourceIndex.HasValue && sourceIndex.Value < insertIndex)
+                    insertIndex = Math.Max(0, insertIndex - 1);
                 var newGroup = new DifficultyRankGroup
                 {
                     UserId = userId,
@@ -322,152 +330,8 @@ public class DifficultyRankingController(
         return true;
     }
 
-    private async Task SyncDerivedVotes(string userId, MediaTypeGroup group)
-    {
-        var completedDeckIds = await userContext.UserDeckPreferences
-            .Where(p => p.UserId == userId && p.Status == DeckStatus.Completed)
-            .Select(p => p.DeckId)
-            .ToListAsync();
-
-        if (completedDeckIds.Count == 0)
-            return;
-
-        var deckRows = await context.Decks.AsNoTracking()
-            .Where(d => completedDeckIds.Contains(d.DeckId) && d.ParentDeckId == null)
-            .Select(d => new { d.DeckId, d.MediaType })
-            .ToListAsync();
-
-        var groups = await context.DifficultyRankGroups
-            .Where(g => g.UserId == userId && g.MediaTypeGroup == group)
-            .Include(g => g.Items)
-            .OrderBy(g => g.SortIndex)
-            .ToListAsync();
-
-        var rankedDeckIds = groups
-            .SelectMany(g => g.Items)
-            .Select(i => i.DeckId)
-            .ToHashSet();
-
-        var groupDeckIds = deckRows
-            .Where(d => MediaTypeGroups.GetGroup(d.MediaType) == group)
-            .Select(d => d.DeckId)
-            .ToHashSet();
-
-        var implied = new Dictionary<(int lowId, int highId), ComparisonOutcome>();
-
-        void AddPair(int deckAId, int deckBId, ComparisonOutcome outcomeForA)
-        {
-            var low = Math.Min(deckAId, deckBId);
-            var high = Math.Max(deckAId, deckBId);
-            var outcome = outcomeForA;
-            if (outcome != ComparisonOutcome.Same && deckAId > deckBId)
-                outcome = (ComparisonOutcome)(-(int)outcome);
-            implied[(low, high)] = outcome;
-        }
-
-        var orderedGroups = groups
-            .Select(g => g.Items.Select(i => i.DeckId).OrderBy(id => id).ToList())
-            .ToList();
-
-        var rankIndexByDeckId = new Dictionary<int, int>();
-        for (var i = 0; i < orderedGroups.Count; i++)
-        {
-            foreach (var id in orderedGroups[i])
-                rankIndexByDeckId[id] = i;
-        }
-
-        foreach (var groupDecks in orderedGroups)
-        {
-            for (var i = 1; i < groupDecks.Count; i++)
-                AddPair(groupDecks[i - 1], groupDecks[i], ComparisonOutcome.Same);
-        }
-
-        for (var i = 0; i + 1 < orderedGroups.Count; i++)
-        {
-            var easierGroup = orderedGroups[i];
-            var harderGroup = orderedGroups[i + 1];
-            foreach (var easier in easierGroup)
-            foreach (var harder in harderGroup)
-                AddPair(easier, harder, ComparisonOutcome.Easier);
-        }
-
-        var staleDerived = await context.DifficultyVotes
-            .Where(v => v.UserId == userId
-                && v.Source == DifficultyVoteSource.WeakOrder
-                && (!rankedDeckIds.Contains(v.DeckLowId) || !rankedDeckIds.Contains(v.DeckHighId))
-                && (groupDeckIds.Contains(v.DeckLowId) || groupDeckIds.Contains(v.DeckHighId)))
-            .ToListAsync();
-        if (staleDerived.Count > 0)
-            context.DifficultyVotes.RemoveRange(staleDerived);
-
-        if (rankedDeckIds.Count < 2)
-        {
-            await context.SaveChangesAsync();
-            return;
-        }
-
-        var manualPairSet = await context.DifficultyVotes
-            .Where(v => v.UserId == userId
-                && v.IsValid
-                && v.Source == DifficultyVoteSource.Manual
-                && rankedDeckIds.Contains(v.DeckLowId)
-                && rankedDeckIds.Contains(v.DeckHighId))
-            .Select(v => new { v.DeckLowId, v.DeckHighId })
-            .ToListAsync();
-        var manualPairs = manualPairSet
-            .Select(v => (v.DeckLowId, v.DeckHighId))
-            .ToHashSet();
-
-        foreach (var pair in manualPairs)
-            implied.Remove(pair);
-
-        var existingWeakOrder = await context.DifficultyVotes
-            .Where(v => v.UserId == userId
-                && v.Source == DifficultyVoteSource.WeakOrder
-                && rankedDeckIds.Contains(v.DeckLowId)
-                && rankedDeckIds.Contains(v.DeckHighId))
-            .ToListAsync();
-        existingWeakOrder = existingWeakOrder
-            .Where(v => !manualPairs.Contains((v.DeckLowId, v.DeckHighId)))
-            .ToList();
-
-        var existingPairs = existingWeakOrder.ToDictionary(v => (v.DeckLowId, v.DeckHighId));
-        var now = DateTimeOffset.UtcNow;
-
-        foreach (var vote in existingWeakOrder)
-        {
-            var rankLow = rankIndexByDeckId[vote.DeckLowId];
-            var rankHigh = rankIndexByDeckId[vote.DeckHighId];
-            var outcome = rankLow == rankHigh
-                ? ComparisonOutcome.Same
-                : rankLow < rankHigh ? ComparisonOutcome.Easier : ComparisonOutcome.Harder;
-
-            if (vote.Outcome != outcome || vote.Source != DifficultyVoteSource.WeakOrder || !vote.IsValid)
-            {
-                vote.Outcome = outcome;
-                vote.Source = DifficultyVoteSource.WeakOrder;
-                vote.IsValid = true;
-                vote.UpdatedAt = now;
-            }
-        }
-
-        foreach (var kvp in implied)
-        {
-            if (existingPairs.ContainsKey(kvp.Key)) continue;
-            context.DifficultyVotes.Add(new DifficultyVote
-            {
-                UserId = userId,
-                DeckLowId = kvp.Key.lowId,
-                DeckHighId = kvp.Key.highId,
-                Outcome = kvp.Value,
-                Source = DifficultyVoteSource.WeakOrder,
-                CreatedAt = now,
-                IsValid = true
-            });
-        }
-
-        await context.SaveChangesAsync();
-    }
+    private Task SyncDerivedVotes(string userId, MediaTypeGroup group)
+        => DifficultyRankingSync.SyncDerivedVotes(context, userContext, userId, group);
 
     private static DeckSummaryDto MapDeckSummary(int deckId, string title, string? romajiTitle, string? englishTitle, string coverName, float difficulty, MediaType mediaType) => new()
     {
