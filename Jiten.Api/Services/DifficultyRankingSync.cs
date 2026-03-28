@@ -95,6 +95,7 @@ public static class DifficultyRankingSync
         var staleDerived = await context.DifficultyVotes
             .Where(v => v.UserId == userId
                 && v.Source == DifficultyVoteSource.WeakOrder
+                && v.IsValid
                 && (!rankedDeckIds.Contains(v.DeckLowId) || !rankedDeckIds.Contains(v.DeckHighId))
                 && (rankedDeckIdsRaw.Contains(v.DeckLowId) || rankedDeckIdsRaw.Contains(v.DeckHighId)
                     || groupDeckIds.Contains(v.DeckLowId) || groupDeckIds.Contains(v.DeckHighId)))
@@ -123,9 +124,25 @@ public static class DifficultyRankingSync
         foreach (var pair in manualPairs)
             implied.Remove(pair);
 
+        var invalidWeakOrderPairs = await context.DifficultyVotes
+            .Where(v => v.UserId == userId
+                && v.Source == DifficultyVoteSource.WeakOrder
+                && !v.IsValid
+                && rankedDeckIds.Contains(v.DeckLowId)
+                && rankedDeckIds.Contains(v.DeckHighId))
+            .Select(v => new { v.DeckLowId, v.DeckHighId })
+            .ToListAsync();
+        var blockedPairs = invalidWeakOrderPairs
+            .Select(v => (v.DeckLowId, v.DeckHighId))
+            .ToHashSet();
+
+        foreach (var pair in blockedPairs)
+            implied.Remove(pair);
+
         var existingWeakOrder = await context.DifficultyVotes
             .Where(v => v.UserId == userId
                 && v.Source == DifficultyVoteSource.WeakOrder
+                && v.IsValid
                 && rankedDeckIds.Contains(v.DeckLowId)
                 && rankedDeckIds.Contains(v.DeckHighId))
             .ToListAsync();
@@ -144,11 +161,10 @@ public static class DifficultyRankingSync
                 ? ComparisonOutcome.Same
                 : rankLow < rankHigh ? ComparisonOutcome.Easier : ComparisonOutcome.Harder;
 
-            if (vote.Outcome != outcome || vote.Source != DifficultyVoteSource.WeakOrder || !vote.IsValid)
+            if (vote.Outcome != outcome || vote.Source != DifficultyVoteSource.WeakOrder)
             {
                 vote.Outcome = outcome;
                 vote.Source = DifficultyVoteSource.WeakOrder;
-                vote.IsValid = true;
                 vote.UpdatedAt = now;
             }
         }
