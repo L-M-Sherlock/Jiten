@@ -529,13 +529,13 @@
       </template>
     </Card>
 
-    <MediaDeckDownloadDialog :deck="deck" :visible="showDownloadDialog" @update:visible="showDownloadDialog = $event" />
-    <SrsAddDeckDialog :visible="showStudyDeckDialog" :preselected-deck="deck" @update:visible="showStudyDeckDialog = $event" />
-    <ReportIssueDialog :visible="showIssueDialog" @update:visible="showIssueDialog = $event" :deck="deck" />
+    <MediaDeckDownloadDialog v-if="showDownloadDialog" :deck="deck" :visible="showDownloadDialog" @update:visible="showDownloadDialog = $event" />
+    <SrsAddDeckDialog v-if="showStudyDeckDialog" :visible="showStudyDeckDialog" :preselected-deck="deck" @update:visible="showStudyDeckDialog = $event" />
+    <ReportIssueDialog v-if="showIssueDialog" :visible="showIssueDialog" @update:visible="showIssueDialog = $event" :deck="deck" />
 
-    <TieredMenu ref="menu" :model="menuItems" popup />
+    <TieredMenu v-if="authStore.isAuthenticated" ref="menu" :model="menuItems" popup />
 
-    <Dialog v-model:visible="showCompletionDialog" modal header="Rate Difficulty" class="w-full" style="max-width: 40rem" :closable="true">
+    <Dialog v-if="showCompletionDialog" v-model:visible="showCompletionDialog" modal header="Rate Difficulty" class="w-full" style="max-width: 40rem" :closable="true">
       <div class="flex flex-col gap-6">
         <div>
           <p class="text-sm text-muted-color mb-2">How difficult did you find <strong>{{ ratingDeckId === deck.deckId ? localiseTitle(deck) : 'this series' }}</strong>?</p>
