@@ -205,7 +205,7 @@
         @keydown.enter="!isFlipped && emit('flip')"
         @keydown.space.prevent="!isFlipped && emit('flip')"
       >
-        <div class="text-sm mb-4 uppercase tracking-wider" :class="srsStore.againCardKeys.has(`${card.wordId}-${card.readingIndex}`) ? 'text-red-400 dark:text-red-400' : 'text-surface-400 dark:text-surface-300'">
+        <div v-if="srsStore.studySettings.showCardStatus" class="text-sm mb-4 uppercase tracking-wider" :class="srsStore.againCardKeys.has(`${card.wordId}-${card.readingIndex}`) ? 'text-red-400 dark:text-red-400' : 'text-surface-400 dark:text-surface-300'">
           {{ srsStore.againCardKeys.has(`${card.wordId}-${card.readingIndex}`) ? 'Again' : card.isNewCard ? 'New' : 'Review' }}
         </div>
         <!-- Plain text before flip, ruby text after flip -->

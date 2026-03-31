@@ -161,6 +161,15 @@
         <label class="block text-sm font-medium mb-2">Card front content</label>
         <div class="flex flex-col gap-2">
           <div class="flex items-center gap-2">
+            <ToggleSwitch v-model="form.showCardStatus" input-id="showCardStatus" />
+            <label for="showCardStatus" class="text-sm cursor-pointer">
+              Show card status
+              <Tooltip content="Display the card status (New, Review, Again) at the top of the card." placement="right">
+                <i class="pi pi-info-circle text-xs text-surface-400 ml-1 cursor-help" />
+              </Tooltip>
+            </label>
+          </div>
+          <div class="flex items-center gap-2">
             <ToggleSwitch v-model="form.showFuriganaOnFront" input-id="showFuriganaOnFront" />
             <label for="showFuriganaOnFront" class="text-sm cursor-pointer">
               Show furigana
