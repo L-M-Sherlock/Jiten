@@ -70,6 +70,8 @@ export const useSrsStore = defineStore('srs', () => {
     showElapsedTime: true,
     enableSwipeGesture: true,
     countFailedReviews: true,
+    showFuriganaOnFront: false,
+    furiganaOnFrontNewOnly: false,
   });
   const sessionStats = ref({
     cardsReviewed: 0,

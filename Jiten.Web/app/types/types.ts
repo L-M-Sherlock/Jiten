@@ -854,6 +854,8 @@ export interface StudySettingsDto {
   showElapsedTime: boolean;
   enableSwipeGesture: boolean;
   countFailedReviews: boolean;
+  showFuriganaOnFront: boolean;
+  furiganaOnFrontNewOnly: boolean;
 }
 
 export interface CardExamplesResponse {

@@ -158,6 +158,30 @@
       </div>
 
       <div>
+        <label class="block text-sm font-medium mb-2">Card front content</label>
+        <div class="flex flex-col gap-2">
+          <div class="flex items-center gap-2">
+            <ToggleSwitch v-model="form.showFuriganaOnFront" input-id="showFuriganaOnFront" />
+            <label for="showFuriganaOnFront" class="text-sm cursor-pointer">
+              Show furigana
+              <Tooltip content="Display furigana (reading hints) above kanji on the card front." placement="right">
+                <i class="pi pi-info-circle text-xs text-surface-400 ml-1 cursor-help" />
+              </Tooltip>
+            </label>
+          </div>
+          <div v-if="form.showFuriganaOnFront" class="flex items-center gap-2 ml-6">
+            <ToggleSwitch v-model="form.furiganaOnFrontNewOnly" input-id="furiganaOnFrontNewOnly" />
+            <label for="furiganaOnFrontNewOnly" class="text-sm cursor-pointer">
+              New cards only
+              <Tooltip content="Only show furigana on cards you haven't seen before. Review cards will show plain kanji." placement="right">
+                <i class="pi pi-info-circle text-xs text-surface-400 ml-1 cursor-help" />
+              </Tooltip>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <div>
         <label class="block text-sm font-medium mb-2">Card back content</label>
         <div class="flex flex-col gap-2">
           <div class="flex items-center gap-2">

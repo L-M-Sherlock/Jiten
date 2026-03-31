@@ -86,4 +86,10 @@ public class StudySettingsDto
 
     [JsonPropertyName("countFailedReviews")]
     public bool CountFailedReviews { get; set; } = true;
+
+    [JsonPropertyName("showFuriganaOnFront")]
+    public bool ShowFuriganaOnFront { get; set; }
+
+    [JsonPropertyName("furiganaOnFrontNewOnly")]
+    public bool FuriganaOnFrontNewOnly { get; set; }
 }

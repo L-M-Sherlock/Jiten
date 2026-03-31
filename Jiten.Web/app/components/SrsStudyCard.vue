@@ -209,7 +209,12 @@
           {{ srsStore.againCardKeys.has(`${card.wordId}-${card.readingIndex}`) ? 'Again' : card.isNewCard ? 'New' : 'Review' }}
         </div>
         <!-- Plain text before flip, ruby text after flip -->
-        <div v-if="!isFlipped" class="text-4xl md:text-5xl font-bold text-center mb-2 font-noto-sans">
+        <div
+          v-if="!isFlipped && srsStore.studySettings.showFuriganaOnFront && (!srsStore.studySettings.furiganaOnFrontNewOnly || card.isNewCard)"
+          class="text-4xl md:text-5xl font-bold text-center mb-2 font-noto-sans head-word"
+          v-html="convertToRuby(card.wordText || card.wordTextPlain)"
+        />
+        <div v-else-if="!isFlipped" class="text-4xl md:text-5xl font-bold text-center mb-2 font-noto-sans">
           {{ card.wordTextPlain }}
         </div>
         <div
