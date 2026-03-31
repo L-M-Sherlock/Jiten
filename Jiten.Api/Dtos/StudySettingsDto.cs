@@ -21,7 +21,8 @@ public enum StudyReviewFrom
 public enum StudyNewCardGathering
 {
     TopDeck,
-    RoundRobin
+    RoundRobin,
+    CrossDeckFrequency
 }
 
 [JsonConverter(typeof(JsonStringEnumConverter<ExampleSentencePosition>))]

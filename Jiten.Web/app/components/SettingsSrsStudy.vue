@@ -31,6 +31,7 @@
   const newCardGatheringOptions = [
     { label: 'Top deck', value: 'TopDeck' },
     { label: 'All decks equally', value: 'RoundRobin' },
+    { label: 'Cross-deck frequency', value: 'CrossDeckFrequency' },
   ];
 
   const reviewFromOptions = [
@@ -129,7 +130,7 @@
       <div>
         <label class="block text-sm font-medium mb-1">
           New card gathering
-          <Tooltip content="How new cards are picked when you have multiple decks.<br>**Top deck** — draws all new cards from your highest-priority deck first before moving to the next.<br>**All decks equally** — rotates between decks so you get new cards from each one." placement="top">
+          <Tooltip content="How new cards are picked when you have multiple decks.<br>**Top deck** — draws all new cards from your highest-priority deck first before moving to the next.<br>**All decks equally** — rotates between decks so you get new cards from each one.<br>**Cross-deck frequency** — draw words by total occurrence count across all your study decks, picking the words you'll see the most first." placement="top">
             <i class="pi pi-info-circle text-xs text-surface-400 ml-1 cursor-help" />
           </Tooltip>
         </label>

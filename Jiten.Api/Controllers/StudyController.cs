@@ -1432,6 +1432,7 @@ public class StudyController(
         }
 
         // ── Phase 4: Resolve new word candidates from study decks ──
+        var sourceDeckNames = new Dictionary<long, string>();
         if (newCardBudget > 0)
         {
             var activeDecks = studyDecks.Where(sd => sd.IsActive).ToList();
@@ -1440,9 +1441,12 @@ public class StudyController(
                 .Where(d => mediaDeckIds.Contains(d.DeckId))
                 .ToDictionaryAsync(d => d.DeckId);
 
+            var isCrossDeck = settings.NewCardGathering == StudyNewCardGathering.CrossDeckFrequency;
             var isRoundRobin = settings.NewCardGathering == StudyNewCardGathering.RoundRobin;
             var perDeckCandidates = new List<List<(int WordId, byte ReadingIndex)>>();
             var totalCandidates = 0;
+            var allEligibleMediaKeys = isCrossDeck ? new HashSet<long>() : null;
+            var nonMediaCandidates = isCrossDeck ? new List<(int WordId, byte ReadingIndex)>() : null;
 
             foreach (var studyDeck in activeDecks)
             {
@@ -1488,6 +1492,10 @@ public class StudyController(
                         filtered = wordPairs.Where(w => !kanaFormKeys.Contains(WordFormHelper.EncodeWordKey(w.WordId, w.ReadingIndex)));
                 }
 
+                var deckName = studyDeck.DeckType == StudyDeckType.MediaDeck && studyDeck.DeckId.HasValue && deckMap.TryGetValue(studyDeck.DeckId.Value, out var deckForName)
+                    ? deckForName.OriginalTitle
+                    : studyDeck.Name;
+
                 var deckCandidates = new List<(int WordId, byte ReadingIndex)>();
                 foreach (var word in filtered)
                 {
@@ -1500,20 +1508,60 @@ public class StudyController(
 
                     existingKeys!.Add(key);
                     deckCandidates.Add((word.WordId, word.ReadingIndex));
+                    sourceDeckNames.TryAdd(key, deckName);
                 }
 
-                if (deckCandidates.Count > 0)
-                    perDeckCandidates.Add(deckCandidates);
+                if (isCrossDeck)
+                {
+                    if (studyDeck.DeckType == StudyDeckType.MediaDeck)
+                    {
+                        foreach (var c in deckCandidates)
+                            allEligibleMediaKeys!.Add(WordFormHelper.EncodeWordKey(c.WordId, c.ReadingIndex));
+                    }
+                    else
+                    {
+                        nonMediaCandidates!.AddRange(deckCandidates);
+                    }
+                }
+                else
+                {
+                    if (deckCandidates.Count > 0)
+                        perDeckCandidates.Add(deckCandidates);
 
-                totalCandidates += deckCandidates.Count;
+                    totalCandidates += deckCandidates.Count;
 
-                if (!isRoundRobin && totalCandidates >= newCardBudget)
-                    break;
+                    if (!isRoundRobin && totalCandidates >= newCardBudget)
+                        break;
+                }
             }
 
             var candidates = new List<(int WordId, byte ReadingIndex)>();
 
-            if (isRoundRobin && perDeckCandidates.Count > 1)
+            if (isCrossDeck && allEligibleMediaKeys!.Count > 0)
+            {
+                var crossDeckOccurrences = await context.DeckWords
+                    .AsNoTracking()
+                    .Where(dw => mediaDeckIds.Contains(dw.DeckId))
+                    .GroupBy(dw => new { dw.WordId, dw.ReadingIndex })
+                    .Select(g => new
+                    {
+                        g.Key.WordId,
+                        g.Key.ReadingIndex,
+                        TotalOccurrences = g.Sum(x => x.Occurrences)
+                    })
+                    .OrderByDescending(x => x.TotalOccurrences)
+                    .ToListAsync();
+
+                foreach (var item in crossDeckOccurrences)
+                {
+                    var key = WordFormHelper.EncodeWordKey(item.WordId, (byte)item.ReadingIndex);
+                    if (allEligibleMediaKeys.Contains(key))
+                        candidates.Add((item.WordId, (byte)item.ReadingIndex));
+                }
+
+                candidates.AddRange(nonMediaCandidates!);
+            }
+            else if (isRoundRobin && perDeckCandidates.Count > 1)
             {
                 var indexes = new int[perDeckCandidates.Count];
                 var exhausted = 0;
@@ -1575,7 +1623,7 @@ public class StudyController(
             .ToDictionary(g => g.Key, g => g.ToList());
         var freqs = await WordFormHelper.LoadWordFormFrequencies(context, wordIds);
 
-        var occDeckIds = studyDecks.Select(sd => sd.DeckId).ToList();
+        var occDeckIds = studyDecks.Where(sd => sd.DeckId.HasValue).Select(sd => sd.DeckId!.Value).ToList();
         var deckOccurrences = occDeckIds.Count > 0
             ? await context.DeckWords
                 .AsNoTracking()
@@ -1644,7 +1692,8 @@ public class StudyController(
                             EnglishTitle = occurrenceDecks[o.DeckId].EnglishTitle,
                             Occurrences = o.Occurrences
                         }).ToList()
-                    : null
+                    : null,
+                SourceDeckName = item.IsNew && sourceDeckNames.TryGetValue(exKey, out var srcName) ? srcName : null
             });
         }
 

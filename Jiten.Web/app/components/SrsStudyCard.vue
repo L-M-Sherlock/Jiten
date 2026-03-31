@@ -362,11 +362,14 @@
         <KanjiBreakdown v-if="srsStore.studySettings.showKanjiBreakdown" :key="`${card.wordId}-${card.readingIndex}`" :word-id="card.wordId" :reading-index="card.readingIndex" />
 
         <!-- Deck occurrences -->
-        <div v-if="card.deckOccurrences?.length" class="mt-4 pt-3 border-t border-surface-200 dark:border-surface-700">
+        <div v-if="card.deckOccurrences?.length || card.sourceDeckName" class="mt-4 pt-3 border-t border-surface-200 dark:border-surface-700">
           <div class="flex flex-wrap gap-x-3 gap-y-1 text-xs text-surface-400 dark:text-surface-500">
-            <span v-for="occ in card.deckOccurrences" :key="occ.deckId">
-              ×{{ occ.occurrences }} {{ localiseTitle(occ) }}
-            </span>
+            <template v-if="card.deckOccurrences?.length">
+              <span v-for="occ in card.deckOccurrences" :key="occ.deckId">
+                ×{{ occ.occurrences }} {{ localiseTitle(occ) }}
+              </span>
+            </template>
+            <span v-else-if="card.sourceDeckName">{{ card.sourceDeckName }}</span>
           </div>
         </div>
 
