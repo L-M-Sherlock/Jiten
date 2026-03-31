@@ -107,6 +107,16 @@
         </div>
       </div>
 
+      <div class="flex items-center gap-2">
+        <ToggleSwitch v-model="form.countFailedReviews" input-id="countFailedReviews" />
+        <label for="countFailedReviews" class="text-sm cursor-pointer">
+          Count failed reviews toward daily limit
+          <Tooltip content="When enabled, every review counts toward your daily limit, including repeated reviews of cards you got wrong. When disabled, only unique cards count, so failing a card multiple times won't eat into your daily budget." placement="top">
+            <i class="pi pi-info-circle text-xs text-surface-400 ml-1 cursor-help" />
+          </Tooltip>
+        </label>
+      </div>
+
       <div>
         <label class="block text-sm font-medium mb-1">
           Grading buttons

@@ -1224,6 +1224,7 @@ public class StudyController(
             .Select(g => new
             {
                 ReviewsToday = g.Count(),
+                UniqueCardsToday = g.Select(l => l.CardId).Distinct().Count(),
                 NewCardsToday = g.Select(l => l.Card)
                     .Where(c => c.CreatedAt >= todayStart)
                     .Select(l => l.CardId)
@@ -1233,7 +1234,9 @@ public class StudyController(
             .FirstOrDefaultAsync();
 
         var newCardsToday = todayStats?.NewCardsToday ?? 0;
-        var reviewsToday = todayStats?.ReviewsToday ?? 0;
+        var reviewsToday = settings.CountFailedReviews
+            ? todayStats?.ReviewsToday ?? 0
+            : todayStats?.UniqueCardsToday ?? 0;
 
 
         var newCardBudget = extraNewCards ?? Math.Max(0, settings.NewCardsPerDay - newCardsToday);
@@ -1913,7 +1916,9 @@ public class StudyController(
             .AsNoTracking()
             .Where(rl => rl.Card.UserId == userId && rl.ReviewDateTime >= todayStart);
 
-        var reviewsToday = await todayLogs.CountAsync();
+        var reviewsToday = settings.CountFailedReviews
+            ? await todayLogs.CountAsync()
+            : await todayLogs.Select(rl => rl.CardId).Distinct().CountAsync();
 
         var newCardsToday = await todayLogs
             .Where(rl => rl.Card.CreatedAt >= todayStart)

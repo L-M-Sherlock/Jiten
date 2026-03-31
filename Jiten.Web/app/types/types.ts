@@ -853,6 +853,7 @@ export interface StudySettingsDto {
   showKeybinds: boolean;
   showElapsedTime: boolean;
   enableSwipeGesture: boolean;
+  countFailedReviews: boolean;
 }
 
 export interface CardExamplesResponse {

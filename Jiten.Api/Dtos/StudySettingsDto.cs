@@ -83,4 +83,7 @@ public class StudySettingsDto
 
     [JsonPropertyName("enableSwipeGesture")]
     public bool EnableSwipeGesture { get; set; } = true;
+
+    [JsonPropertyName("countFailedReviews")]
+    public bool CountFailedReviews { get; set; } = true;
 }

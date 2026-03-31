@@ -69,6 +69,7 @@ export const useSrsStore = defineStore('srs', () => {
     showKeybinds: true,
     showElapsedTime: true,
     enableSwipeGesture: true,
+    countFailedReviews: true,
   });
   const sessionStats = ref({
     cardsReviewed: 0,
@@ -469,7 +470,8 @@ export const useSrsStore = defineStore('srs', () => {
       const cardKey = `${card.wordId}-${card.readingIndex}`;
       const isRepeat = againCardKeys.value.has(cardKey);
 
-      sessionStats.value.cardsReviewed++;
+      const shouldCount = studySettings.value.countFailedReviews || !isRepeat;
+      if (shouldCount) sessionStats.value.cardsReviewed++;
       if (card.isNewCard && !isRepeat) sessionStats.value.newCardsLearned++;
       if (rating >= FsrsRating.Good) sessionStats.value.correctCount++;
       if (rating === FsrsRating.Again) sessionStats.value.gradeCounts.again++;
