@@ -1348,17 +1348,18 @@ public class StudyController(
                             && c.Due <= dueCutoff);
 
             HashSet<long>? studyDeckWordKeys = null;
-            var globalDynamicDecks = studyDecks
+            var activeStudyDecks = studyDecks.Where(sd => sd.IsActive).ToList();
+            var globalDynamicDecks = activeStudyDecks
                 .Where(sd => sd.DeckType == StudyDeckType.GlobalDynamic).ToList();
 
             if (settings.ReviewFrom == StudyReviewFrom.StudyDecksOnly)
             {
-                var mediaDeckIds = studyDecks
+                var mediaDeckIds = activeStudyDecks
                     .Where(sd => sd.DeckType == StudyDeckType.MediaDeck && sd.DeckId.HasValue)
                     .Select(sd => sd.DeckId!.Value).ToList();
                 studyDeckWordKeys = await deckWordResolver.GetStudyDeckWordKeys(mediaDeckIds);
 
-                var staticDeckIds = studyDecks
+                var staticDeckIds = activeStudyDecks
                     .Where(sd => sd.DeckType == StudyDeckType.StaticWordList)
                     .Select(sd => sd.UserStudyDeckId).ToList();
                 if (staticDeckIds.Count > 0)
@@ -2887,7 +2888,7 @@ public class StudyController(
     {
         var studyDecks = await userContext.UserStudyDecks
             .AsNoTracking()
-            .Where(sd => sd.UserId == userId)
+            .Where(sd => sd.UserId == userId && sd.IsActive)
             .ToListAsync();
 
         var mediaDeckIds = studyDecks
