@@ -1131,18 +1131,37 @@ public class StudyController(
             var deck = await context.Decks.AsNoTracking().FirstOrDefaultAsync(d => d.DeckId == request.DeckId.Value);
             if (deck == null) return Results.NotFound("Deck not found.");
 
-            var (words, error) = await deckWordResolver.ResolveDeckWords(new DeckWordResolveRequest(
-                request.DeckId.Value, deck,
-                (DeckDownloadType)request.DownloadType, (DeckOrder)request.Order,
-                request.MinFrequency, request.MaxFrequency,
-                false, false,
-                request.TargetPercentage,
-                request.MinOccurrences, request.MaxOccurrences));
+            if ((DeckDownloadType)request.DownloadType == DeckDownloadType.TargetCoverage && request.TargetPercentage.HasValue)
+            {
+                var (_, targetKeys) = await deckWordResolver.CountTargetCoverageWords(
+                    request.DeckId.Value, deck, request.TargetPercentage.Value, false);
+                if (targetKeys.Count == 0) return Results.Ok(new { total = 0, unlearned = 0 });
 
-            if (error != null) return error;
-            if (words == null || words.Count == 0) return Results.Ok(0);
+                var allDeckWords = await context.DeckWords.AsNoTracking()
+                    .Where(dw => dw.DeckId == request.DeckId.Value)
+                    .Select(dw => new { dw.WordId, dw.ReadingIndex })
+                    .ToListAsync();
 
-            wordPairs = words.Select(w => (w.WordId, w.ReadingIndex)).ToList();
+                wordPairs = allDeckWords
+                    .Where(dw => targetKeys.Contains(WordFormHelper.EncodeWordKey(dw.WordId, dw.ReadingIndex)))
+                    .Select(dw => (dw.WordId, dw.ReadingIndex))
+                    .ToList();
+            }
+            else
+            {
+                var (words, error) = await deckWordResolver.ResolveDeckWords(new DeckWordResolveRequest(
+                    request.DeckId.Value, deck,
+                    (DeckDownloadType)request.DownloadType, (DeckOrder)request.Order,
+                    request.MinFrequency, request.MaxFrequency,
+                    false, false,
+                    request.TargetPercentage,
+                    request.MinOccurrences, request.MaxOccurrences));
+
+                if (error != null) return error;
+                if (words == null || words.Count == 0) return Results.Ok(0);
+
+                wordPairs = words.Select(w => (w.WordId, w.ReadingIndex)).ToList();
+            }
         }
 
         if (wordPairs.Count == 0) return Results.Ok(new { total = 0, unlearned = 0 });
