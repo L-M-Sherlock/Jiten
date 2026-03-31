@@ -223,7 +223,7 @@
           v-html="convertToRuby(wordData?.mainReading?.text || card.wordText || card.wordTextPlain)"
         />
         <!-- Example sentence on front -->
-        <div v-if="srsStore.studySettings.exampleSentencePosition === 'Front' && exampleSentenceHtml" class="mt-4 w-full">
+        <div v-if="srsStore.studySettings.exampleSentencePosition === 'Front' && exampleSentenceHtml" class="mt-4 w-full" @click.stop>
           <blockquote
             class="relative inline-block border-l-4 border-primary-500 pl-5 pr-3 py-3 bg-surface-50 dark:bg-surface-800 rounded-r shadow-sm overflow-hidden w-full"
             :class="{ 'blur-md select-none cursor-pointer': srsStore.studySettings.blurExampleSentence && !exampleRevealed }"
@@ -231,6 +231,60 @@
           >
             <div v-html="exampleSentenceHtml" class="text-base leading-relaxed" />
           </blockquote>
+          <div v-if="cardExample?.sourceDeck" class="flex items-center mt-1">
+            <span class="text-xs italic mr-2 ml-4">Source:</span>
+            <div class="inline-flex items-center text-xs flex-wrap">
+              <NuxtLink
+                v-if="cardExample.sourceParent"
+                :to="`/decks/media/${cardExample.sourceParent.deckId}/detail`"
+                target="_blank"
+                class="hover:underline text-primary-600"
+              >
+                {{ localiseTitle(cardExample.sourceParent) }}
+              </NuxtLink>
+              <span v-if="cardExample.sourceParent" class="mx-1">-</span>
+              <NuxtLink
+                :to="`/decks/media/${cardExample.sourceDeck.deckId}/detail`"
+                target="_blank"
+                class="hover:underline text-primary-600"
+              >
+                {{ localiseTitle(cardExample.sourceDeck) }}
+              </NuxtLink>
+              &nbsp;
+              ({{ getMediaTypeText(cardExample.sourceDeck.mediaType) }})
+            </div>
+          </div>
+
+          <button
+            class="text-xs text-gray-400 hover:text-gray-500 dark:text-gray-500 dark:hover:text-gray-400 mt-1 ml-1 flex items-center gap-1"
+            @pointerdown.stop
+            @click="toggleExtraSentences"
+          >
+            <i :class="extraSentencesExpanded ? 'pi pi-chevron-up' : 'pi pi-plus'" class="text-[0.6rem]" />
+            {{ extraSentencesExpanded ? 'Hide extra sentences' : 'See more sentences' }}
+          </button>
+
+          <div v-if="extraSentencesExpanded" class="mt-2 space-y-2">
+            <ExampleSentenceEntry
+              v-for="(sentence, i) in extraSentences"
+              :key="i"
+              :example-sentence="sentence"
+              :show-source="true"
+            />
+            <div v-if="isLoadingMoreSentences" class="border-l-4 border-surface-300 dark:border-surface-600 pl-5 pr-3 py-3 bg-gray-50 dark:bg-gray-900 rounded-r">
+              <div class="h-5 w-3/4 bg-surface-200 dark:bg-surface-700 rounded animate-pulse" />
+            </div>
+            <button
+              v-if="extraSentences.length > 0 && canLoadMoreSentences"
+              class="text-xs text-gray-400 hover:text-gray-500 dark:text-gray-500 dark:hover:text-gray-400 ml-1 flex items-center gap-1"
+              :disabled="isLoadingMoreSentences"
+              @pointerdown.stop
+              @click="loadMoreSentences"
+            >
+              <i class="pi pi-plus text-[0.6rem]" />
+              Load more
+            </button>
+          </div>
         </div>
 
         <div v-if="!isFlipped" class="text-sm text-surface-400 dark:text-surface-300 mt-6">

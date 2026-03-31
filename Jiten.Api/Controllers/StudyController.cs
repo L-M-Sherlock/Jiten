@@ -1354,10 +1354,10 @@ public class StudyController(
 
             if (settings.ReviewFrom == StudyReviewFrom.StudyDecksOnly)
             {
-                var mediaDeckIds = activeStudyDecks
+                var mediaDecks = activeStudyDecks
                     .Where(sd => sd.DeckType == StudyDeckType.MediaDeck && sd.DeckId.HasValue)
-                    .Select(sd => sd.DeckId!.Value).ToList();
-                studyDeckWordKeys = await deckWordResolver.GetStudyDeckWordKeys(mediaDeckIds);
+                    .ToList();
+                studyDeckWordKeys = await GetFilteredMediaWordKeys(mediaDecks);
 
                 var staticDeckIds = activeStudyDecks
                     .Where(sd => sd.DeckType == StudyDeckType.StaticWordList)
@@ -1964,11 +1964,11 @@ public class StudyController(
 
             var candidateKeys = new HashSet<long>();
 
-            var mediaDeckIds = studyDecks
+            var mediaDecks = studyDecks
                 .Where(sd => sd.DeckType == StudyDeckType.MediaDeck && sd.DeckId.HasValue)
-                .Select(sd => sd.DeckId!.Value).ToList();
-            if (mediaDeckIds.Count > 0)
-                candidateKeys.UnionWith(await deckWordResolver.GetStudyDeckWordKeys(mediaDeckIds));
+                .ToList();
+            if (mediaDecks.Count > 0)
+                candidateKeys.UnionWith(await GetFilteredMediaWordKeys(mediaDecks));
 
             var staticDeckIds = studyDecks
                 .Where(sd => sd.DeckType == StudyDeckType.StaticWordList)
@@ -2063,17 +2063,14 @@ public class StudyController(
                     existingKeys.Add(WordFormHelper.EncodeWordKey(c.WordId, c.ReadingIndex));
                 }
 
-                var mediaDeckIds = studyDecks
+                var mediaDecks = studyDecks
                     .Where(sd => sd.DeckType == StudyDeckType.MediaDeck && sd.DeckId.HasValue)
-                    .Select(sd => sd.DeckId!.Value).ToList();
+                    .ToList();
 
                 var allCandidateKeys = new HashSet<long>();
 
-                if (mediaDeckIds.Count > 0)
-                {
-                    var deckKeys = await deckWordResolver.GetStudyDeckWordKeys(mediaDeckIds);
-                    allCandidateKeys.UnionWith(deckKeys);
-                }
+                if (mediaDecks.Count > 0)
+                    allCandidateKeys.UnionWith(await GetFilteredMediaWordKeys(mediaDecks));
 
                 var staticDeckIds = studyDecks
                     .Where(sd => sd.DeckType == StudyDeckType.StaticWordList)
@@ -2891,10 +2888,10 @@ public class StudyController(
             .Where(sd => sd.UserId == userId && sd.IsActive)
             .ToListAsync();
 
-        var mediaDeckIds = studyDecks
+        var mediaDecks = studyDecks
             .Where(sd => sd.DeckType == StudyDeckType.MediaDeck && sd.DeckId.HasValue)
-            .Select(sd => sd.DeckId!.Value).ToList();
-        var wordKeys = await deckWordResolver.GetStudyDeckWordKeys(mediaDeckIds);
+            .ToList();
+        var wordKeys = await GetFilteredMediaWordKeys(mediaDecks);
 
         var staticDeckIds = studyDecks
             .Where(sd => sd.DeckType == StudyDeckType.StaticWordList)
@@ -2921,6 +2918,43 @@ public class StudyController(
                             gd.MinGlobalFrequency, gd.MaxGlobalFrequency, gd.PosFilter, unmatchedWordIds));
                     }
                 }
+            }
+        }
+
+        return wordKeys;
+    }
+
+    private async Task<HashSet<long>> GetFilteredMediaWordKeys(List<UserStudyDeck> mediaStudyDecks)
+    {
+        var wordKeys = new HashSet<long>();
+        if (mediaStudyDecks.Count == 0) return wordKeys;
+
+        var deckIds = mediaStudyDecks.Select(sd => sd.DeckId!.Value).Distinct().ToList();
+        var deckMap = await context.Decks.AsNoTracking()
+            .Where(d => deckIds.Contains(d.DeckId))
+            .ToDictionaryAsync(d => d.DeckId);
+
+        foreach (var sd in mediaStudyDecks)
+        {
+            if (!deckMap.TryGetValue(sd.DeckId!.Value, out var deck)) continue;
+
+            if ((DeckDownloadType)sd.DownloadType == DeckDownloadType.TargetCoverage && sd.TargetPercentage.HasValue)
+            {
+                var (_, keys) = await deckWordResolver.CountTargetCoverageWords(
+                    sd.DeckId!.Value, deck, sd.TargetPercentage.Value, sd.ExcludeKana);
+                wordKeys.UnionWith(keys);
+            }
+            else
+            {
+                var request = new DeckWordResolveRequest(
+                    sd.DeckId!.Value, deck,
+                    (DeckDownloadType)sd.DownloadType, (DeckOrder)sd.Order,
+                    sd.MinFrequency, sd.MaxFrequency,
+                    false, false,
+                    sd.TargetPercentage,
+                    sd.MinOccurrences, sd.MaxOccurrences);
+                var (_, keys) = await deckWordResolver.CountDeckWords(request, sd.ExcludeKana);
+                wordKeys.UnionWith(keys);
             }
         }
 
