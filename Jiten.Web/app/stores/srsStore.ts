@@ -446,12 +446,13 @@ export const useSrsStore = defineStore('srs', () => {
         clientRequestId,
       };
 
+      let reviewResult: any;
       try {
-        await $api('srs/review', { method: 'POST', body });
+        reviewResult = await $api('srs/review', { method: 'POST', body });
       } catch (firstError: any) {
         if (firstError?.status !== 429) {
           try {
-            await $api('srs/review', { method: 'POST', body });
+            reviewResult = await $api('srs/review', { method: 'POST', body });
           } catch (retryError: any) {
             if (retryError?.status !== 429) throw retryError;
           }
@@ -489,7 +490,9 @@ export const useSrsStore = defineStore('srs', () => {
         batch.splice(currentCardIndex.value, 1);
         const remaining = batch.length - currentCardIndex.value;
         const offset = remaining <= 0 ? 0 : Math.min(Math.floor(Math.random() * 6) + 5, remaining);
-        batch.splice(currentCardIndex.value + offset, 0, { ...card });
+        const reinsertedCard = { ...card };
+        if (reviewResult?.intervalPreview) reinsertedCard.intervalPreview = reviewResult.intervalPreview;
+        batch.splice(currentCardIndex.value + offset, 0, reinsertedCard);
         currentBatch.value = batch;
       } else {
         if (isRepeat) {
