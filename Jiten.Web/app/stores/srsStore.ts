@@ -312,6 +312,7 @@ export const useSrsStore = defineStore('srs', () => {
     if (!deck) return;
     deck.isActive = !deck.isActive;
     await reorderStudyDecks([...studyDecks.value]);
+    await fetchDueSummary();
   }
 
   async function fetchBatch(limit?: number) {
