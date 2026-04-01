@@ -222,7 +222,36 @@ export const useSrsStore = defineStore('srs', () => {
       method: 'POST',
       body: request,
     });
-    await fetchStudyDecks();
+    studyDecks.value.push({
+      userStudyDeckId: result.userStudyDeckId,
+      deckType: request.deckType,
+      name: request.name ?? '',
+      deckId: request.deckId,
+      title: '',
+      mediaType: 0 as any,
+      sortOrder: studyDecks.value.length,
+      isActive: true,
+      downloadType: request.downloadType,
+      order: request.order,
+      minFrequency: request.minFrequency,
+      maxFrequency: request.maxFrequency,
+      targetPercentage: request.targetPercentage,
+      minOccurrences: request.minOccurrences,
+      maxOccurrences: request.maxOccurrences,
+      excludeKana: request.excludeKana,
+      minGlobalFrequency: request.minGlobalFrequency,
+      maxGlobalFrequency: request.maxGlobalFrequency,
+      posFilter: request.posFilter,
+      totalWords: 0,
+      unseenCount: 0,
+      learningCount: 0,
+      reviewCount: 0,
+      masteredCount: 0,
+      blacklistedCount: 0,
+      suspendedCount: 0,
+      dueReviewCount: 0,
+    });
+    fetchStudyDecks();
     invalidateSession();
     return result;
   }
@@ -232,7 +261,23 @@ export const useSrsStore = defineStore('srs', () => {
       method: 'PUT',
       body: request,
     });
-    await fetchStudyDecks();
+    const deck = studyDecks.value.find(d => d.userStudyDeckId === id);
+    if (deck) {
+      if (request.name != null) deck.name = request.name;
+      if (request.description != null) deck.description = request.description;
+      deck.downloadType = request.downloadType;
+      deck.order = request.order;
+      deck.minFrequency = request.minFrequency;
+      deck.maxFrequency = request.maxFrequency;
+      deck.targetPercentage = request.targetPercentage;
+      deck.minOccurrences = request.minOccurrences;
+      deck.maxOccurrences = request.maxOccurrences;
+      deck.excludeKana = request.excludeKana;
+      deck.minGlobalFrequency = request.minGlobalFrequency;
+      deck.maxGlobalFrequency = request.maxGlobalFrequency;
+      deck.posFilter = request.posFilter;
+    }
+    fetchStudyDecks();
     invalidateSession();
   }
 
@@ -279,7 +324,7 @@ export const useSrsStore = defineStore('srs', () => {
       method: 'POST',
       body: { previewToken, name, description, excludeWordIds },
     });
-    await fetchStudyDecks();
+    fetchStudyDecks();
     invalidateSession();
     return result;
   }
@@ -296,7 +341,7 @@ export const useSrsStore = defineStore('srs', () => {
       method: 'POST',
       body: { previewToken, excludeWordIds },
     });
-    await fetchStudyDecks();
+    fetchStudyDecks();
     invalidateSession();
     return result;
   }
