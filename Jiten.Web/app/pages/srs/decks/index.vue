@@ -479,8 +479,8 @@
               <div class="w-16 h-20 flex-shrink-0 rounded overflow-hidden bg-surface-100 dark:bg-surface-700">
                 <template v-if="deck.deckType === StudyDeckType.MediaDeck">
                   <img
-                    v-if="getCoverUrl(deck.coverName)"
-                    :src="getCoverUrl(deck.coverName)!"
+                    v-if="getCoverUrl(deck.coverName) || getCoverUrl(deck.parentCoverName)"
+                    :src="(getCoverUrl(deck.coverName) || getCoverUrl(deck.parentCoverName))!"
                     :alt="deck.title"
                     class="w-full h-full object-cover"
                   />
@@ -498,6 +498,9 @@
 
               <!-- Info -->
               <div class="flex-1 min-w-0">
+                <div v-if="deck.parentTitle" class="text-xs text-surface-400 dark:text-surface-500 truncate">
+                  {{ localiseTitle({ originalTitle: deck.parentTitle, romajiTitle: deck.parentRomajiTitle, englishTitle: deck.parentEnglishTitle }) }}
+                </div>
                 <div class="font-semibold truncate">
                   <template v-if="deck.deckType === StudyDeckType.MediaDeck">
                     {{ localiseTitle({ originalTitle: deck.title, romajiTitle: deck.romajiTitle, englishTitle: deck.englishTitle }) }}
@@ -637,8 +640,8 @@
               <div class="w-16 h-20 flex-shrink-0 rounded overflow-hidden bg-surface-100 dark:bg-surface-700">
                 <template v-if="deck.deckType === StudyDeckType.MediaDeck">
                   <img
-                    v-if="getCoverUrl(deck.coverName)"
-                    :src="getCoverUrl(deck.coverName)!"
+                    v-if="getCoverUrl(deck.coverName) || getCoverUrl(deck.parentCoverName)"
+                    :src="(getCoverUrl(deck.coverName) || getCoverUrl(deck.parentCoverName))!"
                     :alt="deck.title"
                     class="w-full h-full object-cover"
                   />
@@ -656,6 +659,9 @@
 
               <!-- Info -->
               <div class="flex-1 min-w-0">
+                <div v-if="deck.parentTitle" class="text-xs text-surface-400 dark:text-surface-500 truncate">
+                  {{ localiseTitle({ originalTitle: deck.parentTitle, romajiTitle: deck.parentRomajiTitle, englishTitle: deck.parentEnglishTitle }) }}
+                </div>
                 <div class="font-semibold truncate">
                   <template v-if="deck.deckType === StudyDeckType.MediaDeck">
                     {{ localiseTitle({ originalTitle: deck.title, romajiTitle: deck.romajiTitle, englishTitle: deck.englishTitle }) }}

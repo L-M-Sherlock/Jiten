@@ -66,6 +66,15 @@ public class StudyController(
         await Task.WhenAll(decksTask, cardsTask);
 
         var decks = decksTask.Result;
+
+        var parentDeckIds = decks.Values.Where(d => d.ParentDeckId.HasValue).Select(d => d.ParentDeckId!.Value).Distinct().ToList();
+        var parentDecks = parentDeckIds.Count > 0
+            ? await context.Decks.AsNoTracking()
+                .Where(d => parentDeckIds.Contains(d.DeckId))
+                .Select(d => new { d.DeckId, d.OriginalTitle, d.RomajiTitle, d.EnglishTitle, d.CoverName })
+                .ToDictionaryAsync(d => d.DeckId)
+            : new();
+
         var cardStateMap = new Dictionary<(int, byte), (FsrsState State, DateTime Due)>();
         foreach (var c in cardsTask.Result)
             cardStateMap[(c.WordId, c.ReadingIndex)] = (c.State, c.Due);
@@ -262,6 +271,15 @@ public class StudyController(
                 MaxGlobalFrequency = sd.MaxGlobalFrequency,
                 PosFilter = sd.PosFilter
             };
+
+            if (deck?.ParentDeckId != null && parentDecks.TryGetValue(deck.ParentDeckId.Value, out var parent))
+            {
+                dto.ParentDeckId = parent.DeckId;
+                dto.ParentTitle = parent.OriginalTitle;
+                dto.ParentRomajiTitle = parent.RomajiTitle;
+                dto.ParentEnglishTitle = parent.EnglishTitle;
+                dto.ParentCoverName = parent.CoverName;
+            }
 
             if (countOnlyStats.TryGetValue(sd.UserStudyDeckId, out var precomputed))
             {
@@ -1745,9 +1763,18 @@ public class StudyController(
         var occurrenceDecks = occurrenceDeckIds.Count > 0
             ? await context.Decks.AsNoTracking()
                 .Where(d => occurrenceDeckIds.Contains(d.DeckId))
+                .Select(d => new { d.DeckId, d.OriginalTitle, d.RomajiTitle, d.EnglishTitle, d.ParentDeckId })
+                .ToDictionaryAsync(d => d.DeckId)
+            : new();
+
+        var occParentDeckIds = occurrenceDecks.Values.Where(d => d.ParentDeckId.HasValue).Select(d => d.ParentDeckId!.Value).Distinct().ToList();
+        var occParentDecks = occParentDeckIds.Count > 0
+            ? await context.Decks.AsNoTracking()
+                .Where(d => occParentDeckIds.Contains(d.DeckId))
                 .Select(d => new { d.DeckId, d.OriginalTitle, d.RomajiTitle, d.EnglishTitle })
                 .ToDictionaryAsync(d => d.DeckId)
             : new();
+
         var cards = new List<StudyCardDto>();
         foreach (var item in ordered)
         {
@@ -1790,13 +1817,24 @@ public class StudyController(
                         .OrderByDescending(o => o.Occurrences)
                         .Take(5)
                         .Where(o => occurrenceDecks.ContainsKey(o.DeckId))
-                        .Select(o => new StudyDeckOccurrenceDto
+                        .Select(o =>
                         {
-                            DeckId = o.DeckId,
-                            OriginalTitle = occurrenceDecks[o.DeckId].OriginalTitle,
-                            RomajiTitle = occurrenceDecks[o.DeckId].RomajiTitle,
-                            EnglishTitle = occurrenceDecks[o.DeckId].EnglishTitle,
-                            Occurrences = o.Occurrences
+                            var occDeck = occurrenceDecks[o.DeckId];
+                            var dto = new StudyDeckOccurrenceDto
+                            {
+                                DeckId = o.DeckId,
+                                OriginalTitle = occDeck.OriginalTitle,
+                                RomajiTitle = occDeck.RomajiTitle,
+                                EnglishTitle = occDeck.EnglishTitle,
+                                Occurrences = o.Occurrences
+                            };
+                            if (occDeck.ParentDeckId != null && occParentDecks.TryGetValue(occDeck.ParentDeckId.Value, out var occParent))
+                            {
+                                dto.ParentOriginalTitle = occParent.OriginalTitle;
+                                dto.ParentRomajiTitle = occParent.RomajiTitle;
+                                dto.ParentEnglishTitle = occParent.EnglishTitle;
+                            }
+                            return dto;
                         }).ToList()
                     : null,
                 SourceDeckName = item.IsNew && sourceDeckNames.TryGetValue(exKey, out var srcName) ? srcName : null
