@@ -97,6 +97,11 @@ export const useSrsStore = defineStore('srs', () => {
   const studyMoreParams = ref<StudyMoreParams | null>(null);
   const exampleCache = ref(new Map<string, StudyExampleSentenceDto | null>());
   const examplePrefetchedUpTo = ref(-1);
+  const sessionDirty = ref(false);
+
+  function invalidateSession() {
+    sessionDirty.value = true;
+  }
 
   const canUndo = computed(() => undoState.value !== null);
 
@@ -218,6 +223,7 @@ export const useSrsStore = defineStore('srs', () => {
       body: request,
     });
     await fetchStudyDecks();
+    invalidateSession();
     return result;
   }
 
@@ -227,11 +233,13 @@ export const useSrsStore = defineStore('srs', () => {
       body: request,
     });
     await fetchStudyDecks();
+    invalidateSession();
   }
 
   async function removeStudyDeck(id: number) {
     await $api(`srs/study-decks/${id}`, { method: 'DELETE' });
     studyDecks.value = studyDecks.value.filter(d => d.userStudyDeckId !== id);
+    invalidateSession();
   }
 
   async function addDeckWord(deckId: number, wordId: number, readingIndex: number, occurrences = 1) {
@@ -272,6 +280,7 @@ export const useSrsStore = defineStore('srs', () => {
       body: { previewToken, name, description, excludeWordIds },
     });
     await fetchStudyDecks();
+    invalidateSession();
     return result;
   }
 
@@ -288,6 +297,7 @@ export const useSrsStore = defineStore('srs', () => {
       body: { previewToken, excludeWordIds },
     });
     await fetchStudyDecks();
+    invalidateSession();
     return result;
   }
 
@@ -307,6 +317,7 @@ export const useSrsStore = defineStore('srs', () => {
         ],
       },
     });
+    invalidateSession();
   }
 
   async function toggleDeckActive(deckId: number) {
@@ -315,10 +326,27 @@ export const useSrsStore = defineStore('srs', () => {
     deck.isActive = !deck.isActive;
     await reorderStudyDecks([...studyDecks.value]);
     await fetchDueSummary();
+    invalidateSession();
   }
 
   async function fetchBatch(limit?: number) {
     if (isWrappingUp.value) return;
+
+    if (sessionDirty.value) {
+      sessionId.value = null;
+      currentBatch.value = [];
+      currentCardIndex.value = 0;
+      isFlipped.value = false;
+      isSessionComplete.value = false;
+      isWrappingUp.value = false;
+      preWrapUpBatch.value = [];
+      againCardKeys.value = new Set();
+      clearedGrades.value = [];
+      undoState.value = null;
+      exampleCache.value = new Map();
+      examplePrefetchedUpTo.value = -1;
+      sessionDirty.value = false;
+    }
 
     isLoading.value = true;
     const isRefetch = sessionStats.value.cardsReviewed > 0;
@@ -682,6 +710,7 @@ export const useSrsStore = defineStore('srs', () => {
       method: 'PUT',
       body: settings,
     });
+    invalidateSession();
   }
 
   function clearSessionState() {
@@ -701,6 +730,7 @@ export const useSrsStore = defineStore('srs', () => {
     fetchError.value = null;
     exampleCache.value = new Map();
     examplePrefetchedUpTo.value = -1;
+    sessionDirty.value = false;
   }
 
   function startStudyMore(params: StudyMoreParams) {
