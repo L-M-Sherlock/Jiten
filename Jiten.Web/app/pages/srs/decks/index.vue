@@ -525,7 +525,7 @@
                     </span>
                   </div>
                   <div class="flex gap-3 mt-1 text-xs text-gray-500 flex-wrap">
-                    <span>{{ deck.unseenCount }} unseen</span>
+                    <span>{{ deck.unseenCount }} unknown</span>
                     <span class="text-purple-400">{{ deck.learningCount }} learning</span>
                     <span class="text-purple-600">{{ deck.reviewCount + deck.masteredCount }} known</span>
                     <span v-if="deck.dueReviewCount > 0" class="text-blue-500 font-semibold">{{ deck.dueReviewCount }} due</span>
