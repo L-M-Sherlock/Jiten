@@ -1661,26 +1661,29 @@ public class StudyController(
 
             var candidates = new List<(int WordId, byte ReadingIndex)>();
 
-            if (isCrossDeck && allEligibleMediaKeys!.Count > 0)
+            if (isCrossDeck)
             {
-                var crossDeckOccurrences = await context.DeckWords
-                    .AsNoTracking()
-                    .Where(dw => mediaDeckIds.Contains(dw.DeckId))
-                    .GroupBy(dw => new { dw.WordId, dw.ReadingIndex })
-                    .Select(g => new
-                    {
-                        g.Key.WordId,
-                        g.Key.ReadingIndex,
-                        TotalOccurrences = g.Sum(x => x.Occurrences)
-                    })
-                    .OrderByDescending(x => x.TotalOccurrences)
-                    .ToListAsync();
-
-                foreach (var item in crossDeckOccurrences)
+                if (allEligibleMediaKeys!.Count > 0)
                 {
-                    var key = WordFormHelper.EncodeWordKey(item.WordId, (byte)item.ReadingIndex);
-                    if (allEligibleMediaKeys.Contains(key))
-                        candidates.Add((item.WordId, (byte)item.ReadingIndex));
+                    var crossDeckOccurrences = await context.DeckWords
+                        .AsNoTracking()
+                        .Where(dw => mediaDeckIds.Contains(dw.DeckId))
+                        .GroupBy(dw => new { dw.WordId, dw.ReadingIndex })
+                        .Select(g => new
+                        {
+                            g.Key.WordId,
+                            g.Key.ReadingIndex,
+                            TotalOccurrences = g.Sum(x => x.Occurrences)
+                        })
+                        .OrderByDescending(x => x.TotalOccurrences)
+                        .ToListAsync();
+
+                    foreach (var item in crossDeckOccurrences)
+                    {
+                        var key = WordFormHelper.EncodeWordKey(item.WordId, (byte)item.ReadingIndex);
+                        if (allEligibleMediaKeys.Contains(key))
+                            candidates.Add((item.WordId, (byte)item.ReadingIndex));
+                    }
                 }
 
                 candidates.AddRange(nonMediaCandidates!);
@@ -2239,6 +2242,9 @@ public class StudyController(
                     .Select(sd => sd.UserStudyDeckId).ToList();
                 if (staticDeckIds.Count > 0)
                     allCandidateKeys.UnionWith(await deckWordResolver.GetStaticDeckWordKeys(staticDeckIds));
+
+                foreach (var sd in studyDecks.Where(sd => sd.DeckType == StudyDeckType.GlobalDynamic))
+                    allCandidateKeys.UnionWith(await deckWordResolver.GetGlobalDynamicWordKeys(sd.MinGlobalFrequency, sd.MaxGlobalFrequency, sd.PosFilter));
 
                 allCandidateKeys.ExceptWith(existingKeys);
                 count = Math.Min(allCandidateKeys.Count, budget);
