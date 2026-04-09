@@ -72,6 +72,8 @@ export const useSrsStore = defineStore('srs', () => {
     countFailedReviews: true,
     showFuriganaOnFront: false,
     furiganaOnFrontNewOnly: false,
+    autoPlayWord: true,
+    autoPlaySentence: true,
   });
   const sessionStats = ref({
     cardsReviewed: 0,

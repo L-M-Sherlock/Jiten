@@ -2649,6 +2649,7 @@ public class StudyController(
     {
         var dto = new StudyExampleSentenceDto
         {
+            SentenceId = sentence.SentenceId,
             Text = sentence.Text,
             WordPosition = exWord.Position,
             WordLength = exWord.Length

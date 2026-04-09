@@ -271,6 +271,7 @@ export interface TokenResponse {
 }
 
 export interface ExampleSentence {
+  sentenceId: number;
   text: string;
   wordPosition: number;
   wordLength: number;
@@ -824,6 +825,7 @@ export interface StudyDefinitionDto {
 }
 
 export interface StudyExampleSentenceDto {
+  sentenceId: number;
   text: string;
   wordPosition: number;
   wordLength: number;
@@ -865,6 +867,8 @@ export interface StudySettingsDto {
   showCardStatus: boolean;
   showFuriganaOnFront: boolean;
   furiganaOnFrontNewOnly: boolean;
+  autoPlayWord: boolean;
+  autoPlaySentence: boolean;
 }
 
 export interface CardExamplesResponse {

@@ -288,6 +288,24 @@
             </Tooltip>
           </label>
         </div>
+        <div class="flex items-center gap-2">
+          <ToggleSwitch v-model="form.autoPlayWord" input-id="autoPlayWord" />
+          <label for="autoPlayWord" class="text-sm cursor-pointer">
+            Auto-play word audio on flip
+            <Tooltip content="Automatically read the headword aloud when you flip a card." placement="right">
+              <i class="pi pi-info-circle text-xs text-surface-400 ml-1 cursor-help" />
+            </Tooltip>
+          </label>
+        </div>
+        <div class="flex items-center gap-2">
+          <ToggleSwitch v-model="form.autoPlaySentence" input-id="autoPlaySentence" />
+          <label for="autoPlaySentence" class="text-sm cursor-pointer">
+            Auto-play example sentence on flip
+            <Tooltip content="Automatically read the example sentence aloud when you flip a card. If both word and sentence are enabled, they play sequentially." placement="right">
+              <i class="pi pi-info-circle text-xs text-surface-400 ml-1 cursor-help" />
+            </Tooltip>
+          </label>
+        </div>
       </div>
 
       <Button label="Save" :loading="saving" class="w-full md:w-auto" @click="save" />
