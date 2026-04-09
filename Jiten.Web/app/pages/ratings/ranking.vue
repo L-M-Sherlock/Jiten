@@ -293,7 +293,7 @@ onUnmounted(cancelDrag);
                     <div class="text-xs uppercase tracking-wide text-muted-color">Rank {{ index + 1 }}</div>
                     <div class="text-xs text-muted-color">{{ group.decks.length }}</div>
                   </div>
-                  <div class="flex flex-col gap-2">
+                  <div class="rank-group-list flex flex-col gap-2">
                     <div
                       v-for="deck in group.decks"
                       :key="deck.id"
@@ -323,6 +323,28 @@ onUnmounted(cancelDrag);
 </template>
 
 <style scoped>
+.rank-group-list {
+  --rank-pill-height: 58px;
+  max-height: calc(var(--rank-pill-height) * 3 + 1rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 0.25rem;
+  scrollbar-gutter: stable;
+}
+
+.rank-group-list::-webkit-scrollbar {
+  width: 8px;
+}
+
+.rank-group-list::-webkit-scrollbar-thumb {
+  background: var(--surface-300);
+  border-radius: 999px;
+}
+
+.rank-group-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
 .deck-pill {
   display: flex;
   align-items: center;
