@@ -241,7 +241,7 @@
         <div class="flex items-center justify-center gap-3 mb-2">
           <div
             v-if="!isFlipped && srsStore.studySettings.showFuriganaOnFront && (!srsStore.studySettings.furiganaOnFrontNewOnly || card.isNewCard)"
-            class="text-4xl md:text-5xl font-bold text-center font-noto-sans head-word"
+            class="text-4xl md:text-5xl text-center font-noto-sans head-word"
             v-html="convertToRuby(card.wordText || card.wordTextPlain)"
           />
           <div v-else-if="!isFlipped" class="text-4xl md:text-5xl font-bold text-center font-noto-sans">
@@ -249,7 +249,7 @@
           </div>
           <div
             v-else
-            class="text-4xl md:text-5xl font-bold text-center font-noto-sans head-word"
+            class="text-4xl md:text-5xl text-center font-noto-sans head-word"
             v-html="convertToRuby(wordData?.mainReading?.text || card.wordText || card.wordTextPlain)"
           />
           <TtsButton :text="headWordTtsText" :word-id="card.wordId" :reading-index="card.readingIndex" size="md" @click.stop />
