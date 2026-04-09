@@ -101,4 +101,7 @@ public class StudySettingsDto
 
     [JsonPropertyName("autoPlaySentence")]
     public bool AutoPlaySentence { get; set; } = true;
+
+    [JsonPropertyName("timezone")]
+    public string? Timezone { get; set; }
 }

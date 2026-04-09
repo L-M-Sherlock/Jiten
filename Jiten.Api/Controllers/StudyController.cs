@@ -1348,7 +1348,7 @@ public class StudyController(
         var settings = await LoadStudySettings(userId);
         limit = Math.Clamp(limit, 1, settings.BatchSize);
         var now = DateTime.UtcNow;
-        var todayStart = now.Date;
+        var (todayStart, _) = ResolveTimezone(now, settings.Timezone);
 
         var todayStats = await userContext.FsrsCards
             .Where(c => c.UserId == userId)
@@ -1970,6 +1970,11 @@ public class StudyController(
         request.MaxReviewsPerDay = Math.Clamp(request.MaxReviewsPerDay, 0, 9999);
         request.BatchSize = Math.Clamp(request.BatchSize, 1, 999);
         request.GradingButtons = request.GradingButtons is 2 or 4 ? request.GradingButtons : 4;
+        if (!string.IsNullOrEmpty(request.Timezone))
+        {
+            try { TimeZoneInfo.FindSystemTimeZoneById(request.Timezone); }
+            catch (TimeZoneNotFoundException) { request.Timezone = null; }
+        }
 
         var fsrsSettings = await userContext.UserFsrsSettings
             .FirstOrDefaultAsync(s => s.UserId == userId);
@@ -2039,8 +2044,8 @@ public class StudyController(
         if (userId == null) return Results.Unauthorized();
 
         var now = DateTime.UtcNow;
-        var todayStart = now.Date;
         var settings = await LoadStudySettings(userId);
+        var (todayStart, _) = ResolveTimezone(now, settings.Timezone);
 
         var dueCutoff = now;
 
@@ -2193,8 +2198,8 @@ public class StudyController(
         if (userId == null) return Results.Unauthorized();
 
         var now = DateTime.UtcNow;
-        var todayStart = now.Date;
         var settings = await LoadStudySettings(userId);
+        var (todayStart, _) = ResolveTimezone(now, settings.Timezone);
         int count = 0;
 
         switch (mode)
@@ -2432,21 +2437,24 @@ public class StudyController(
         var userId = currentUserService.UserId;
         if (userId == null) return Results.Unauthorized();
 
-        var today = DateTime.UtcNow.Date;
-        var windowStart = today.AddDays(-83); // ~12 weeks
+        var settings = await LoadStudySettings(userId);
+        var now = DateTime.UtcNow;
+        var (todayStart, offsetHours) = ResolveTimezone(now, settings.Timezone);
+        var today = now.AddHours(offsetHours).Date;
+        var windowStart = today.AddDays(-83);
 
         var userLogsBase = userContext.FsrsReviewLogs
             .AsNoTracking()
             .Where(rl => rl.Card.UserId == userId);
 
         var totalReviewDays = await userLogsBase
-            .Select(rl => rl.ReviewDateTime.Date)
+            .Select(rl => rl.ReviewDateTime.AddHours(offsetHours).Date)
             .Distinct()
             .CountAsync();
 
         var dailyStats = await userLogsBase
-            .Where(rl => rl.ReviewDateTime >= windowStart)
-            .GroupBy(rl => rl.ReviewDateTime.Date)
+            .Where(rl => rl.ReviewDateTime.AddHours(offsetHours) >= windowStart)
+            .GroupBy(rl => rl.ReviewDateTime.AddHours(offsetHours).Date)
             .Select(g => new { Date = g.Key, Count = g.Count() })
             .OrderBy(g => g.Date)
             .ToListAsync();
@@ -2471,13 +2479,16 @@ public class StudyController(
         var userId = currentUserService.UserId;
         if (userId == null) return Results.Unauthorized();
 
-        var today = DateTime.UtcNow.Date;
+        var settings = await LoadStudySettings(userId);
+        var now = DateTime.UtcNow;
+        var (_, offsetHours) = ResolveTimezone(now, settings.Timezone);
+        var today = now.AddHours(offsetHours).Date;
         var windowStart = today.AddDays(-83);
 
         var recentDates = await userContext.FsrsReviewLogs
             .AsNoTracking()
-            .Where(rl => rl.Card.UserId == userId && rl.ReviewDateTime >= windowStart)
-            .Select(rl => rl.ReviewDateTime.Date)
+            .Where(rl => rl.Card.UserId == userId && rl.ReviewDateTime.AddHours(offsetHours) >= windowStart)
+            .Select(rl => rl.ReviewDateTime.AddHours(offsetHours).Date)
             .Distinct()
             .OrderByDescending(d => d)
             .ToListAsync();
@@ -2536,6 +2547,26 @@ public class StudyController(
         longest = Math.Max(longest, streak);
 
         return (currentStreak, Math.Max(longest, currentStreak));
+    }
+
+    private static (DateTime dayStart, double offsetHours) ResolveTimezone(DateTime utcNow, string? timezone)
+    {
+        if (string.IsNullOrEmpty(timezone))
+            return (utcNow.Date, 0);
+
+        try
+        {
+            var tz = TimeZoneInfo.FindSystemTimeZoneById(timezone);
+            var offsetHours = tz.GetUtcOffset(utcNow).TotalHours;
+            var localNow = TimeZoneInfo.ConvertTimeFromUtc(utcNow, tz);
+            var localMidnight = localNow.Date;
+            var dayStart = TimeZoneInfo.ConvertTimeToUtc(DateTime.SpecifyKind(localMidnight, DateTimeKind.Unspecified), tz);
+            return (dayStart, offsetHours);
+        }
+        catch (TimeZoneNotFoundException)
+        {
+            return (utcNow.Date, 0);
+        }
     }
 
     [HttpPost("card-examples")]

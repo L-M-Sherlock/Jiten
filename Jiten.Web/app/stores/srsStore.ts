@@ -74,6 +74,7 @@ export const useSrsStore = defineStore('srs', () => {
     furiganaOnFrontNewOnly: false,
     autoPlayWord: true,
     autoPlaySentence: true,
+    timezone: 'Europe/London',
   });
   const sessionStats = ref({
     cardsReviewed: 0,
