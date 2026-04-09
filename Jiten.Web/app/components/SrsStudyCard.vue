@@ -244,7 +244,7 @@
             class="text-4xl md:text-5xl text-center font-noto-sans head-word"
             v-html="convertToRuby(card.wordText || card.wordTextPlain)"
           />
-          <div v-else-if="!isFlipped" class="text-4xl md:text-5xl font-bold text-center font-noto-sans">
+          <div v-else-if="!isFlipped" class="text-4xl md:text-5xl text-center font-noto-sans">
             {{ card.wordTextPlain }}
           </div>
           <div
