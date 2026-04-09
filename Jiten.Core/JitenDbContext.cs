@@ -872,6 +872,7 @@ public class JitenDbContext : DbContext
 
             entity.Property(e => e.UserId).IsRequired().HasMaxLength(450);
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("CURRENT_TIMESTAMP");
+            entity.Property(e => e.UpdatedAt).HasDefaultValueSql("CURRENT_TIMESTAMP");
 
             entity.HasOne(e => e.Group)
                 .WithMany(g => g.Items)

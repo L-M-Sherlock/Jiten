@@ -86,6 +86,9 @@ public class DifficultyRankingController(
             foreach (var g in groupsForSection)
             {
                 var decks = g.Items
+                    .OrderByDescending(i => i.UpdatedAt)
+                    .ThenByDescending(i => i.CreatedAt)
+                    .ThenBy(i => deckMap[i.DeckId].Summary.Title)
                     .Select(i => deckMap.GetValueOrDefault(i.DeckId))
                     .Where(d => d != null)
                     .Select(d => d!.Summary)
@@ -119,6 +122,7 @@ public class DifficultyRankingController(
         var userId = currentUserService.UserId;
         if (string.IsNullOrEmpty(userId))
             return Results.Unauthorized();
+        var now = DateTimeOffset.UtcNow;
 
         var deck = await context.Decks
             .Where(d => d.DeckId == request.DeckId)
@@ -189,7 +193,8 @@ public class DifficultyRankingController(
                     UserId = userId,
                     DeckId = request.DeckId,
                     Group = target,
-                    CreatedAt = DateTimeOffset.UtcNow
+                    CreatedAt = now,
+                    UpdatedAt = now
                 };
                 target.Items.Add(newItem);
                 context.DifficultyRankItems.Add(newItem);
@@ -208,14 +213,15 @@ public class DifficultyRankingController(
                     UserId = userId,
                     MediaTypeGroup = group,
                     SortIndex = insertIndex,
-                    CreatedAt = DateTimeOffset.UtcNow
+                    CreatedAt = now
                 };
                 var newItem = new DifficultyRankItem
                 {
                     UserId = userId,
                     DeckId = request.DeckId,
                     Group = newGroup,
-                    CreatedAt = DateTimeOffset.UtcNow
+                    CreatedAt = now,
+                    UpdatedAt = now
                 };
                 newGroup.Items.Add(newItem);
                 groups.Insert(insertIndex, newGroup);
@@ -320,7 +326,8 @@ public class DifficultyRankingController(
                 UserId = userId,
                 DeckId = entry.DeckId,
                 Group = current,
-                CreatedAt = now
+                CreatedAt = now,
+                UpdatedAt = now
             };
             current.Items.Add(item);
             lastScore = entry.Score;
